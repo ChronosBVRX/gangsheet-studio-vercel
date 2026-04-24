@@ -1,0 +1,6 @@
+fastapi==0.115.6
+python-multipart==0.0.20
+pymupdf==1.25.1
+opencv-python-headless==4.10.0.84
+numpy==2.2.1
+pillow==11.1.0
