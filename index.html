@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Gang Sheet Studio | Celular</title>
+
+  <style>
+    :root {
+      --primary-color: #f59e0b;
+      --primary-hover: #d97706;
+      --secondary-color: #10b981;
+      --danger-color: #ef4444;
+      --bg-color: #0f172a;
+      --panel-bg: #1e293b;
+      --text-color: #f8fafc;
+      --border-color: #334155;
+      --highlight: #3b82f6;
+      --topbar-bg: #0b1120;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      min-height: 100vh;
+    }
+
+    .top-navbar {
+      background-color: var(--topbar-bg);
+      padding: 15px;
+      border-bottom: 2px solid var(--primary-color);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 1.1rem;
+      letter-spacing: 1px;
+    }
+
+    .developer-credit {
+      font-size: 0.7rem;
+      color: #94a3b8;
+      letter-spacing: 1px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+
+    .main {
+      padding: 12px;
+    }
+
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      width: 100%;
+    }
+
+    .controls-panel,
+    .preview-panel {
+      background-color: var(--panel-bg);
+      padding: 16px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      width: 100%;
+    }
+
+    h2 {
+      margin-top: 0;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 10px;
+      font-size: 1rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 0.82rem;
+      color: #94a3b8;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="file"],
+    select {
+      padding: 11px;
+      background-color: #0f172a;
+      color: white;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 1rem;
+      width: 100%;
+    }
+
+    input[type="file"] {
+      border: 1px dashed var(--primary-color);
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+
+    .btn-scan,
+    .btn-save,
+    .btn-clear {
+      width: 100%;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: bold;
+      padding: 14px;
+      font-size: 1rem;
+      transition: all 0.2s;
+      margin-bottom: 10px;
+    }
+
+    .btn-scan {
+      background-color: var(--highlight);
+      color: white;
+    }
+
+    .btn-save {
+      background-color: var(--primary-color);
+      color: #000;
+    }
+
+    .btn-clear {
+      background-color: transparent;
+      color: var(--danger-color);
+      border: 1px solid var(--danger-color);
+    }
+
+    .loader {
+      display: none;
+      color: var(--primary-color);
+      font-weight: bold;
+      text-align: center;
+      font-size: 0.9rem;
+      margin-bottom: 12px;
+    }
+
+    .info-box {
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      padding: 12px;
+      border-radius: 8px;
+      color: #cbd5e1;
+      font-size: 0.84rem;
+      line-height: 1.4;
+      margin-bottom: 12px;
+    }
+
+    .pdf-gallery-master {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      max-height: 70vh;
+      overflow-y: auto;
+      background-color: #0f172a;
+      padding: 12px;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+    }
+
+    .gallery-item {
+      position: relative;
+      background-color: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .gallery-item img {
+      max-height: 80px;
+      max-width: 100%;
+      object-fit: contain;
+      background-image:
+        linear-gradient(45deg, #334155 25%, transparent 25%),
+        linear-gradient(-45deg, #334155 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #334155 75%),
+        linear-gradient(-45deg, transparent 75%, #334155 75%);
+      background-size: 10px 10px;
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+      border-radius: 4px;
+      padding: 5px;
+    }
+
+    .char-mapper {
+      width: 100%;
+      text-align: center;
+      font-weight: bold;
+      font-size: 1.3rem;
+      border: 2px solid var(--border-color);
+      color: white;
+      background-color: #0f172a;
+      border-radius: 6px;
+      padding: 8px;
+      text-transform: uppercase;
+    }
+
+    .ocr-success {
+      border-color: var(--secondary-color);
+      background-color: rgba(16, 185, 129, 0.12);
+    }
+
+    .ocr-doubt {
+      border-color: var(--danger-color);
+      background-color: rgba(239, 68, 68, 0.12);
+    }
+
+    .style-mapper {
+      width: 100%;
+      font-size: 0.75rem;
+      text-align: center;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background-color: #0b1120;
+      color: #cbd5e1;
+      font-weight: bold;
+      cursor: pointer;
+      text-transform: uppercase;
+    }
+
+    .btn-delete-piece {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      background-color: var(--danger-color);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      font-weight: bold;
+      cursor: pointer;
+      font-size: 0.8rem;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+    }
+
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      color: #64748b;
+      font-size: 1rem;
+      padding: 30px 10px;
+    }
+
+    pre {
+      background: #020617;
+      color: #cbd5e1;
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 250px;
+      font-size: 0.72rem;
+      border: 1px solid var(--border-color);
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    @media (min-width: 900px) {
+      .main {
+        padding: 20px;
+      }
+
+      .app-container {
+        flex-direction: row;
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      .controls-panel {
+        width: 400px;
+        flex-shrink: 0;
+      }
+
+      .preview-panel {
+        flex-grow: 1;
+      }
+
+      .pdf-gallery-master {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="top-navbar">
+    <div class="brand">
+      <h1>GANG SHEET STUDIO</h1>
+      <div class="developer-credit">VERSIÓN CELULAR + BACKEND PYTHON</div>
+    </div>
+  </div>
+
+  <main class="main">
+    <div class="app-container">
+      <section class="controls-panel">
+        <h2>Extractor de PDF</h2>
+
+        <div class="info-box">
+          Sube un PDF. El backend Python en Vercel extrae piezas y te regresa la galería editable.
+        </div>
+
+        <div class="form-group">
+          <label>Nombre de la tipografía:</label>
+          <input type="text" id="font-custom-name" placeholder="Ej. AL NASSR LIGA 2025" />
+        </div>
+
+        <div class="form-group">
+          <label>Variantes separadas por coma:</label>
+          <input type="text" id="font-styles-input" value="ESTILO 1" placeholder="LOCAL, VISITA, ALTERNATIVA" />
+        </div>
+
+        <div class="form-group">
+          <label>Página del PDF:</label>
+          <input type="number" id="page-number" value="0" min="0" />
+        </div>
+
+        <div class="form-group">
+          <label>Escala de análisis:</label>
+          <input type="number" id="scale-number" value="3" min="1" max="5" step="0.5" />
+        </div>
+
+        <div class="form-group">
+          <label>Cargar PDF:</label>
+          <input type="file" id="pdf-upload" accept="application/pdf" />
+        </div>
+
+        <button class="btn-scan" onclick="procesarDocumentoBackend()">
+          Escanear PDF
+        </button>
+
+        <div class="loader" id="loader">
+          Procesando PDF... ⏳
+        </div>
+
+        <button class="btn-save" onclick="guardarAbecedarioLocal()">
+          Generar JSON de Tipografía
+        </button>
+
+        <button class="btn-clear" onclick="limpiarTodo()">
+          Limpiar resultados
+        </button>
+
+        <div>
+          <label>JSON generado:</label>
+          <pre id="json-output">{}</pre>
+        </div>
+      </section>
+
+      <section class="preview-panel">
+        <h2>Resultados</h2>
+
+        <div class="pdf-gallery-master" id="pdf-gallery-master">
+          <div class="empty-state">
+            Carga un PDF y presiona “Escanear PDF”.
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    let pdfFileGlobal = null;
+    let piezasExtraidasTemp = [];
+
+    document.getElementById("pdf-upload").addEventListener("change", function(e) {
+      pdfFileGlobal = e.target.files[0];
+    });
+
+    function generarOpcionesEstilos() {
+      let rawStyles = document.getElementById("font-styles-input").value;
+
+      let estilosUsuario = rawStyles
+        .split(",")
+        .map(s => s.trim().toUpperCase())
+        .filter(s => s !== "");
+
+      if (estilosUsuario.length === 0) {
+        estilosUsuario = ["DEFECTO"];
+      }
+
+      return estilosUsuario
+        .map(estilo => `<option value="${estilo}">${estilo}</option>`)
+        .join("");
+    }
+
+    async function procesarDocumentoBackend() {
+      if (!pdfFileGlobal) {
+        alert("Primero carga un archivo PDF.");
+        return;
+      }
+
+      const loader = document.getElementById("loader");
+      const gallery = document.getElementById("pdf-gallery-master");
+
+      loader.style.display = "block";
+      gallery.innerHTML = "";
+
+      const page = document.getElementById("page-number").value || "0";
+      const scale = document.getElementById("scale-number").value || "3";
+
+      const formData = new FormData();
+      formData.append("file", pdfFileGlobal);
+      formData.append("page", page);
+      formData.append("scale", scale);
+
+      try {
+        const response = await fetch("/api/extract", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.ok) {
+          throw new Error(result.error || "Error desconocido procesando el PDF.");
+        }
+
+        piezasExtraidasTemp = [];
+
+        result.pieces.forEach((pieza) => {
+          piezasExtraidasTemp.push({
+            id: pieza.id,
+            src: pieza.src,
+            propor: pieza.propor,
+            color: pieza.color,
+            fila: pieza.fila,
+            x: pieza.x,
+            y: pieza.y,
+            w: pieza.w,
+            h: pieza.h
+          });
+
+          gallery.insertAdjacentHTML("beforeend", `
+            <div class="gallery-item" id="card_${pieza.id}" style="border-bottom: 4px solid ${pieza.color};">
+              <button class="btn-delete-piece" onclick="eliminarPiezaGaleria('${pieza.id}')" title="Descartar imagen">✕</button>
+              <img src="${pieza.src}">
+              <input
+                type="text"
+                class="char-mapper ${pieza.char ? "ocr-success" : "ocr-doubt"}"
+                id="map_${pieza.id}"
+                maxlength="1"
+                value="${pieza.char || ""}"
+                placeholder="?">
+              <select class="style-mapper" id="style_${pieza.id}">
+                ${generarOpcionesEstilos()}
+              </select>
+            </div>
+          `);
+        });
+
+        if (result.pieces.length === 0) {
+          gallery.innerHTML = `
+            <div class="empty-state" style="color:#ef4444;">
+              No se encontraron piezas válidas.
+            </div>
+          `;
+        }
+
+      } catch (error) {
+        gallery.innerHTML = `
+          <div class="empty-state" style="color:#ef4444;">
+            Error: ${error.message}
+          </div>
+        `;
+      } finally {
+        loader.style.display = "none";
+      }
+    }
+
+    function eliminarPiezaGaleria(idPieza) {
+      const card = document.getElementById(`card_${idPieza}`);
+
+      if (card) {
+        card.remove();
+      }
+
+      piezasExtraidasTemp = piezasExtraidasTemp.filter(p => p.id !== idPieza);
+    }
+
+    function guardarAbecedarioLocal() {
+      const nombreFuente = document.getElementById("font-custom-name").value.trim();
+
+      if (!nombreFuente) {
+        alert("El nombre de la tipografía es obligatorio.");
+        return;
+      }
+
+      const abcNuevo = {};
+      let guardadas = 0;
+
+      piezasExtraidasTemp.forEach(pieza => {
+        const input = document.getElementById(`map_${pieza.id}`);
+        const select = document.getElementById(`style_${pieza.id}`);
+
+        if (!input || !select) return;
+
+        const char = input.value.trim().toUpperCase();
+        const estilo = select.value.trim().toUpperCase() || "DEFECTO";
+
+        if (!char) return;
+
+        if (!abcNuevo[estilo]) {
+          abcNuevo[estilo] = {};
+        }
+
+        abcNuevo[estilo][char] = {
+          src: pieza.src,
+          propor: pieza.propor,
+          color: pieza.color,
+          meta: {
+            fila: pieza.fila,
+            x: pieza.x,
+            y: pieza.y,
+            w: pieza.w,
+            h: pieza.h
+          }
+        };
+
+        guardadas++;
+      });
+
+      if (guardadas === 0) {
+        alert("Debes asignar al menos un carácter válido.");
+        return;
+      }
+
+      const salida = {
+        nombre: nombreFuente,
+        data: abcNuevo
+      };
+
+      document.getElementById("json-output").textContent = JSON.stringify(salida, null, 2);
+    }
+
+    function limpiarTodo() {
+      piezasExtraidasTemp = [];
+      document.getElementById("pdf-gallery-master").innerHTML = `
+        <div class="empty-state">
+          Carga un PDF y presiona “Escanear PDF”.
+        </div>
+      `;
+      document.getElementById("json-output").textContent = "{}";
+    }
+  </script>
+</body>
+</html>
