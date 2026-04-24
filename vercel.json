@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/extract.py": {
+      "maxDuration": 60
+    }
+  }
+}
