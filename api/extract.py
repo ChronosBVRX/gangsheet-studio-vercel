@@ -63,7 +63,8 @@ def render_pdf_page(pdf_bytes: bytes, page_number: int = 0, scale: float = 3.0):
 def extract_pdf_text_positions(page, scale: float) -> List[Dict[str, Any]]:
     chars = []
     data = page.get_text("dict")
-
+    
+    # Mapeo extendido para atrapar todo tipo de símbolos y puntuación
     allowed_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñ.,;:-_!?'\"()[]{}@*/\\&#%+=$€"
 
     for block in data.get("blocks", []):
@@ -107,59 +108,72 @@ def limpiar_fondo_blanco(crop: np.ndarray) -> np.ndarray:
 
     b, g, r, a = cv2.split(bgra)
 
-    white_mask = (r > 235) & (g > 235) & (b > 235)
+    # Tolerancia de blanco muy ajustada para no borrar colores muy pálidos
+    white_mask = (r > 245) & (g > 245) & (b > 245)
     a[white_mask] = 0
 
     return cv2.merge([b, g, r, a])
 
 
-# --- ESTA ES LA FUNCIÓN CORREGIDA ---
 def agrupar_partes_caracter(cajas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not cajas:
         return []
 
-    # Ordenar de arriba hacia abajo (basado en 'y')
-    cajas_ordenadas = sorted(cajas, key=lambda c: c["y"])
+    cajas_ordenadas = sorted(cajas, key=lambda c: (c["x"], c["y"]))
     grupos = []
 
     for caja in cajas_ordenadas:
         agregado = False
-        caja_centro_x = caja["x"] + caja["w"] / 2
 
         for grupo in grupos:
-            grupo_min_x = grupo["x"]
-            grupo_max_x = grupo["x"] + grupo["w"]
-            grupo_max_y = grupo["y"] + grupo["h"]
+            # Tienen que estar en la misma columna vertical (Overlap X)
+            overlap_x = min(grupo["x"] + grupo["w"], caja["x"] + caja["w"]) - max(grupo["x"], caja["x"])
+            
+            if overlap_x > -2: 
+                g_max_y = grupo["y"] + grupo["h"]
+                g_min_y = grupo["y"]
+                c_max_y = caja["y"] + caja["h"]
+                c_min_y = caja["y"]
 
-            # REGLA 1: Deben estar en la misma columna (compartir espacio X)
-            alineados_x = (grupo_min_x - 8) <= caja_centro_x <= (grupo_max_x + 8)
+                if c_min_y > g_max_y:
+                    gap_y = c_min_y - g_max_y
+                elif g_min_y > c_max_y:
+                    gap_y = g_min_y - c_max_y
+                else:
+                    gap_y = 0
 
-            # REGLA 2 (LA QUE FALTABA): ¡Deben estar CERCA!
-            # Si la distancia entre el grupo de arriba y esta pieza es menor 
-            # a la altura de la letra, asumimos que es un acento/punto.
-            distancia_y = caja["y"] - grupo_max_y
-            altura_referencia = max(grupo["h"], caja["h"])
-            cerca_verticalmente = distancia_y < (altura_referencia * 0.8)
+                h_grupo = grupo["h"]
+                h_caja = caja["h"]
 
-            if alineados_x and cerca_verticalmente:
-                grupo["partes"].append(caja)
+                # LA MAGIA: Diferenciamos "texto amontonado" de "una letra con su acento/punto"
+                es_modificador = (h_caja < h_grupo * 0.45) or (h_grupo < h_caja * 0.45)
+                son_pequenos = (h_caja < 45) and (h_grupo < 45)
 
-                # Expandir la caja contenedora
-                nuevo_x = min(grupo["x"], caja["x"])
-                nuevo_y = min(grupo["y"], caja["y"])
-                nuevo_max_x = max(grupo["x"] + grupo["w"], caja["x"] + caja["w"])
-                nuevo_max_y = max(grupo["y"] + grupo["h"], caja["y"] + caja["h"])
+                merge = False
+                
+                # NUNCA juntamos dos letras grandes. Solo las partes pequeñas correspondientes a una grande.
+                if es_modificador or son_pequenos:
+                    alt_peq = min(h_grupo, h_caja)
+                    if gap_y <= max(10, alt_peq * 1.5):
+                        merge = True
 
-                grupo["x"] = nuevo_x
-                grupo["y"] = nuevo_y
-                grupo["w"] = nuevo_max_x - nuevo_x
-                grupo["h"] = nuevo_max_y - nuevo_y
-
-                agregado = True
-                break
+                if merge:
+                    grupo["partes"].append(caja)
+                    
+                    nuevo_x = min(grupo["x"], caja["x"])
+                    nuevo_y = min(grupo["y"], caja["y"])
+                    nuevo_max_x = max(grupo["x"] + grupo["w"], caja["x"] + caja["w"])
+                    nuevo_max_y = max(grupo["y"] + grupo["h"], caja["y"] + caja["h"])
+                    
+                    grupo["x"] = nuevo_x
+                    grupo["y"] = nuevo_y
+                    grupo["w"] = nuevo_max_x - nuevo_x
+                    grupo["h"] = nuevo_max_y - nuevo_y
+                    
+                    agregado = True
+                    break
 
         if not agregado:
-            # Si no está cerca de nada por encima, es una letra/símbolo nuevo
             grupos.append({
                 "x": caja["x"],
                 "y": caja["y"],
@@ -218,16 +232,15 @@ def buscar_match_pdf(grupo: Dict[str, Any], elementos_pdf: List[Dict[str, Any]])
 def detectar_piezas(
     image_bgr: np.ndarray,
     elementos_pdf: List[Dict[str, Any]],
-    min_area: int = 15
+    min_area: int = 8
 ):
-    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
-
-    _, thresh = cv2.threshold(
-        gray,
-        0,
-        255,
-        cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU
-    )
+    # Detección Universal de Color: Detectamos cualquier cosa que no sea blanco puro.
+    lower_white = np.array([235, 235, 235], dtype=np.uint8)
+    upper_white = np.array([255, 255, 255], dtype=np.uint8)
+    mask_white = cv2.inRange(image_bgr, lower_white, upper_white)
+    
+    # Invertimos para que las letras sean la luz que guía a los contornos
+    thresh = cv2.bitwise_not(mask_white)
 
     contours, _ = cv2.findContours(
         thresh,
@@ -250,16 +263,15 @@ def detectar_piezas(
                 "area": float(area)
             })
 
-    # Usar la función corregida
     grupos_finales = agrupar_partes_caracter(cajas)
 
-    # Ordenar los resultados para la vista (lectura de izquierda a derecha, arriba a abajo)
+    # Ordenar izquierda a derecha, y por bloques de texto.
     grupos_finales.sort(key=lambda g: (round(g["y"] / 40) * 40, g["x"]))
 
     piezas = []
 
     for idx, grupo in enumerate(grupos_finales):
-        margen = 4 
+        margen = 3 
 
         x = max(0, grupo["x"] - margen)
         y = max(0, grupo["y"] - margen)
@@ -325,7 +337,7 @@ async def extract_pdf(
         piezas = detectar_piezas(
             rendered_image,
             elementos_pdf=elementos_pdf,
-            min_area=15 
+            min_area=8 
         )
 
         return JSONResponse({
