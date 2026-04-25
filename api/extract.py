@@ -64,6 +64,9 @@ def extract_pdf_text_positions(page, scale: float) -> List[Dict[str, Any]]:
     chars = []
     data = page.get_text("dict")
 
+    # Ampliamos los caracteres permitidos para incluir símbolos, puntuación y acentos
+    allowed_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñ.,;:-_!?'\"()[]{}@*/\\&#%+=$€"
+
     for block in data.get("blocks", []):
         for line in block.get("lines", []):
             for span in line.get("spans", []):
@@ -73,10 +76,8 @@ def extract_pdf_text_positions(page, scale: float) -> List[Dict[str, Any]]:
                 if not text or not bbox:
                     continue
 
-                clean = "".join(
-                    ch for ch in text.upper()
-                    if ch.isalnum() or ch in "ÁÉÍÓÚÑ"
-                )
+                # Filtrar manteniendo los caracteres válidos
+                clean = "".join(ch for ch in text if ch in allowed_chars)
 
                 if not clean:
                     continue
@@ -114,88 +115,52 @@ def limpiar_fondo_blanco(crop: np.ndarray) -> np.ndarray:
     return cv2.merge([b, g, r, a])
 
 
-def unir_cajas(cajas: List[Dict[str, Any]]) -> Dict[str, Any]:
-    x0 = min(c["x"] for c in cajas)
-    y0 = min(c["y"] for c in cajas)
-    x1 = max(c["x"] + c["w"] for c in cajas)
-    y1 = max(c["y"] + c["h"] for c in cajas)
-
-    return {
-        "x": x0,
-        "y": y0,
-        "w": x1 - x0,
-        "h": y1 - y0,
-        "partes": cajas
-    }
-
-
-def agrupar_por_filas(cajas: List[Dict[str, Any]], tolerancia_y: int = 45):
-    cajas = sorted(cajas, key=lambda c: c["y"])
-    filas = []
-
-    for caja in cajas:
-        centro_y = caja["y"] + caja["h"] / 2
-        mejor_fila = None
-
-        for fila in filas:
-            y_min = min(c["y"] for c in fila)
-            y_max = max(c["y"] + c["h"] for c in fila)
-
-            if y_min - tolerancia_y <= centro_y <= y_max + tolerancia_y:
-                mejor_fila = fila
-                break
-
-        if mejor_fila is not None:
-            mejor_fila.append(caja)
-        else:
-            filas.append([caja])
-
-    for fila in filas:
-        fila.sort(key=lambda c: c["x"])
-
-    return filas
-
-
-def agrupar_caracteres_por_fila(fila: List[Dict[str, Any]]):
-    if not fila:
+# NUEVA FUNCIÓN: Agrupar solo partes del MISMO carácter (como la 'i' y su punto, o la 'Ñ' y su tilde)
+def agrupar_partes_caracter(cajas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not cajas:
         return []
 
+    # Ordenar de izquierda a derecha
+    cajas_ordenadas = sorted(cajas, key=lambda c: c["x"])
     grupos = []
-    grupo_actual = [fila[0]]
 
-    for actual in fila[1:]:
-        caja_grupo = unir_cajas(grupo_actual)
+    for caja in cajas_ordenadas:
+        agregado = False
+        caja_centro_x = caja["x"] + caja["w"] / 2
 
-        distancia_x = actual["x"] - (caja_grupo["x"] + caja_grupo["w"])
-        altura_base = max(caja_grupo["h"], actual["h"])
+        for grupo in grupos:
+            grupo_min_x = grupo["x"]
+            grupo_max_x = grupo["x"] + grupo["w"]
 
-        se_tocan_verticalmente = (
-            actual["y"] < caja_grupo["y"] + caja_grupo["h"]
-            and actual["y"] + actual["h"] > caja_grupo["y"]
-        )
+            # Si el centro de la nueva caja cae dentro del ancho del grupo existente
+            # (con un pequeño margen de tolerancia), pertenecen a la misma letra (ej. acento arriba)
+            if (grupo_min_x - 5) <= caja_centro_x <= (grupo_max_x + 5):
+                grupo["partes"].append(caja)
 
-        cerca_horizontal = distancia_x < altura_base * 0.28
+                # Expandir los límites del grupo para abarcar la nueva parte
+                nuevo_x = min(grupo["x"], caja["x"])
+                nuevo_y = min(grupo["y"], caja["y"])
+                nuevo_max_x = max(grupo["x"] + grupo["w"], caja["x"] + caja["w"])
+                nuevo_max_y = max(grupo["y"] + grupo["h"], caja["y"] + caja["h"])
 
-        pequeno_encima = (
-            actual["h"] < altura_base * 0.35
-            and abs(
-                (actual["x"] + actual["w"] / 2)
-                - (caja_grupo["x"] + caja_grupo["w"] / 2)
-            ) < altura_base * 0.5
-        )
+                grupo["x"] = nuevo_x
+                grupo["y"] = nuevo_y
+                grupo["w"] = nuevo_max_x - nuevo_x
+                grupo["h"] = nuevo_max_y - nuevo_y
 
-        if (
-            distancia_x < 0
-            or cerca_horizontal
-            or pequeno_encima
-            or (se_tocan_verticalmente and distancia_x < altura_base * 0.18)
-        ):
-            grupo_actual.append(actual)
-        else:
-            grupos.append(unir_cajas(grupo_actual))
-            grupo_actual = [actual]
+                agregado = True
+                break
 
-    grupos.append(unir_cajas(grupo_actual))
+        if not agregado:
+            # Crear un nuevo grupo de carácter individual
+            grupos.append({
+                "x": caja["x"],
+                "y": caja["y"],
+                "w": caja["w"],
+                "h": caja["h"],
+                "partes": [caja]
+            })
+
     return grupos
 
 
@@ -246,7 +211,7 @@ def buscar_match_pdf(grupo: Dict[str, Any], elementos_pdf: List[Dict[str, Any]])
 def detectar_piezas(
     image_bgr: np.ndarray,
     elementos_pdf: List[Dict[str, Any]],
-    min_area: int = 80
+    min_area: int = 15  # Reducido drásticamente para atrapar puntos y comas
 ):
     gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
 
@@ -269,7 +234,8 @@ def detectar_piezas(
         area = cv2.contourArea(cnt)
         x, y, w, h = cv2.boundingRect(cnt)
 
-        if area > min_area and w > 4 and h > 8:
+        # Filtros relajados: Si mide al menos 2x2 píxeles, lo procesamos
+        if area > min_area and w >= 2 and h >= 2:
             cajas.append({
                 "x": int(x),
                 "y": int(y),
@@ -278,28 +244,16 @@ def detectar_piezas(
                 "area": float(area)
             })
 
-    filas = agrupar_por_filas(cajas)
+    # Ahora agrupamos SOLO verticalmente (acentos, tildes, la 'i')
+    grupos_finales = agrupar_partes_caracter(cajas)
 
-    grupos_finales = []
-
-    for index_fila, fila in enumerate(filas):
-        grupos = agrupar_caracteres_por_fila(fila)
-
-        for grupo in grupos:
-            grupo["fila"] = index_fila
-            grupos_finales.append(grupo)
-
-    grupos_finales = [
-        g for g in grupos_finales
-        if g["w"] > 10 and g["h"] > 15
-    ]
-
-    grupos_finales.sort(key=lambda g: (g["y"], g["x"]))
+    # Ordenar lectura de arriba hacia abajo, de izquierda a derecha
+    grupos_finales.sort(key=lambda g: (round(g["y"] / 20) * 20, g["x"]))
 
     piezas = []
 
     for idx, grupo in enumerate(grupos_finales):
-        margen = 8
+        margen = 4  # Margen más cerrado para no captar basura del vecino
 
         x = max(0, grupo["x"] - margen)
         y = max(0, grupo["y"] - margen)
@@ -322,15 +276,13 @@ def detectar_piezas(
             "w": int(w),
             "h": int(h),
             "propor": float(w / h) if h else 1,
-            "fila": int(grupo["fila"]),
+            "fila": 0,
             "color": color_dominante(crop_transparent),
             "partes": len(grupo.get("partes", []))
         })
 
     return piezas
 
-# -- CORRECCIÓN APLICADA AQUÍ --
-# Cambiamos "/" por "/api/extract" para que coincida con la ruta de Vercel
 
 @app.get("/api/extract")
 def home():
@@ -367,7 +319,7 @@ async def extract_pdf(
         piezas = detectar_piezas(
             rendered_image,
             elementos_pdf=elementos_pdf,
-            min_area=80
+            min_area=15  # Coincide con la relajación de filtros
         )
 
         return JSONResponse({
