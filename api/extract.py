@@ -2,14 +2,13 @@ import base64
 import io
 from typing import List, Dict, Any
 
-import fitz
+import fitz  # PyMuPDF
 import cv2
 import numpy as np
 from PIL import Image
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
 
 app = FastAPI(title="Gang Sheet Studio Extractor")
 
@@ -20,7 +19,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 def image_to_base64_png(image: np.ndarray) -> str:
     if image.ndim == 2:
@@ -35,71 +33,6 @@ def image_to_base64_png(image: np.ndarray) -> str:
     encoded = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return f"data:image/png;base64,{encoded}"
 
-
-def render_pdf_page(pdf_bytes: bytes, page_number: int = 0, scale: float = 3.0):
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-
-    if page_number < 0 or page_number >= len(doc):
-        page_number = 0
-
-    page = doc[page_number]
-    matrix = fitz.Matrix(scale, scale)
-    pix = page.get_pixmap(matrix=matrix, alpha=False)
-
-    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-        pix.height,
-        pix.width,
-        pix.n
-    )
-
-    if pix.n == 4:
-        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
-    elif pix.n == 3:
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-
-    return doc, page, img, scale
-
-
-def extract_pdf_text_positions(page, scale: float) -> List[Dict[str, Any]]:
-    chars = []
-    data = page.get_text("dict")
-    
-    # Mapeo extendido para atrapar todo tipo de símbolos y puntuación
-    allowed_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñ.,;:-_!?'\"()[]{}@*/\\&#%+=$€"
-
-    for block in data.get("blocks", []):
-        for line in block.get("lines", []):
-            for span in line.get("spans", []):
-                text = span.get("text", "")
-                bbox = span.get("bbox")
-
-                if not text or not bbox:
-                    continue
-
-                clean = "".join(ch for ch in text if ch in allowed_chars)
-
-                if not clean:
-                    continue
-
-                x0, y0, x1, y1 = bbox
-                width = (x1 - x0) * scale
-                height = (y1 - y0) * scale
-                char_width = width / max(len(clean), 1)
-
-                for i, ch in enumerate(clean):
-                    cx = (x0 * scale) + (char_width * i) + (char_width / 2)
-                    cy = (y0 * scale) + (height / 2)
-
-                    chars.append({
-                        "char": ch,
-                        "cx": float(cx),
-                        "cy": float(cy),
-                        "source": "pdf_text"
-                    })
-
-    return chars
-
-
 def limpiar_fondo_blanco(crop: np.ndarray) -> np.ndarray:
     if crop.shape[2] == 3:
         bgra = cv2.cvtColor(crop, cv2.COLOR_BGR2BGRA)
@@ -107,83 +40,11 @@ def limpiar_fondo_blanco(crop: np.ndarray) -> np.ndarray:
         bgra = crop.copy()
 
     b, g, r, a = cv2.split(bgra)
-
-    # Tolerancia de blanco muy ajustada para no borrar colores muy pálidos
-    white_mask = (r > 245) & (g > 245) & (b > 245)
+    # Tolerancia para eliminar el fondo blanco sin tocar colores claros
+    white_mask = (r > 240) & (g > 240) & (b > 240)
     a[white_mask] = 0
 
     return cv2.merge([b, g, r, a])
-
-
-def agrupar_partes_caracter(cajas: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    if not cajas:
-        return []
-
-    cajas_ordenadas = sorted(cajas, key=lambda c: (c["x"], c["y"]))
-    grupos = []
-
-    for caja in cajas_ordenadas:
-        agregado = False
-
-        for grupo in grupos:
-            # Tienen que estar en la misma columna vertical (Overlap X)
-            overlap_x = min(grupo["x"] + grupo["w"], caja["x"] + caja["w"]) - max(grupo["x"], caja["x"])
-            
-            if overlap_x > -2: 
-                g_max_y = grupo["y"] + grupo["h"]
-                g_min_y = grupo["y"]
-                c_max_y = caja["y"] + caja["h"]
-                c_min_y = caja["y"]
-
-                if c_min_y > g_max_y:
-                    gap_y = c_min_y - g_max_y
-                elif g_min_y > c_max_y:
-                    gap_y = g_min_y - c_max_y
-                else:
-                    gap_y = 0
-
-                h_grupo = grupo["h"]
-                h_caja = caja["h"]
-
-                # LA MAGIA: Diferenciamos "texto amontonado" de "una letra con su acento/punto"
-                es_modificador = (h_caja < h_grupo * 0.45) or (h_grupo < h_caja * 0.45)
-                son_pequenos = (h_caja < 45) and (h_grupo < 45)
-
-                merge = False
-                
-                # NUNCA juntamos dos letras grandes. Solo las partes pequeñas correspondientes a una grande.
-                if es_modificador or son_pequenos:
-                    alt_peq = min(h_grupo, h_caja)
-                    if gap_y <= max(10, alt_peq * 1.5):
-                        merge = True
-
-                if merge:
-                    grupo["partes"].append(caja)
-                    
-                    nuevo_x = min(grupo["x"], caja["x"])
-                    nuevo_y = min(grupo["y"], caja["y"])
-                    nuevo_max_x = max(grupo["x"] + grupo["w"], caja["x"] + caja["w"])
-                    nuevo_max_y = max(grupo["y"] + grupo["h"], caja["y"] + caja["h"])
-                    
-                    grupo["x"] = nuevo_x
-                    grupo["y"] = nuevo_y
-                    grupo["w"] = nuevo_max_x - nuevo_x
-                    grupo["h"] = nuevo_max_y - nuevo_y
-                    
-                    agregado = True
-                    break
-
-        if not agregado:
-            grupos.append({
-                "x": caja["x"],
-                "y": caja["y"],
-                "w": caja["w"],
-                "h": caja["h"],
-                "partes": [caja]
-            })
-
-    return grupos
-
 
 def color_dominante(crop_bgra: np.ndarray) -> str:
     if crop_bgra.shape[2] != 4:
@@ -201,106 +62,151 @@ def color_dominante(crop_bgra: np.ndarray) -> str:
 
     return f"#{r_avg:02X}{g_avg:02X}{b_avg:02X}"
 
+def render_pdf_page(pdf_bytes: bytes, page_number: int, scale: float):
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    if page_number < 0 or page_number >= len(doc):
+        page_number = 0
 
-def buscar_match_pdf(grupo: Dict[str, Any], elementos_pdf: List[Dict[str, Any]]):
-    if not elementos_pdf:
-        return ""
+    page = doc[page_number]
+    matrix = fitz.Matrix(scale, scale)
+    pix = page.get_pixmap(matrix=matrix, alpha=False)
 
-    cx = grupo["x"] + grupo["w"] / 2
-    cy = grupo["y"] + grupo["h"] / 2
-
-    mejor_idx = -1
-    mejor_distancia = float("inf")
-
-    for i, item in enumerate(elementos_pdf):
-        dist = ((cx - item["cx"]) ** 2 + (cy - item["cy"]) ** 2) ** 0.5
-
-        if dist < mejor_distancia:
-            mejor_distancia = dist
-            mejor_idx = i
-
-    tolerancia = max(grupo["w"], grupo["h"]) * 0.75
-
-    if mejor_idx != -1 and mejor_distancia < tolerancia:
-        char = elementos_pdf[mejor_idx]["char"]
-        elementos_pdf.pop(mejor_idx)
-        return char
-
-    return ""
-
-
-def detectar_piezas(
-    image_bgr: np.ndarray,
-    elementos_pdf: List[Dict[str, Any]],
-    min_area: int = 8
-):
-    # Detección Universal de Color: Detectamos cualquier cosa que no sea blanco puro.
-    lower_white = np.array([235, 235, 235], dtype=np.uint8)
-    upper_white = np.array([255, 255, 255], dtype=np.uint8)
-    mask_white = cv2.inRange(image_bgr, lower_white, upper_white)
-    
-    # Invertimos para que las letras sean la luz que guía a los contornos
-    thresh = cv2.bitwise_not(mask_white)
-
-    contours, _ = cv2.findContours(
-        thresh,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE
+    img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
+        pix.height, pix.width, pix.n
     )
 
-    cajas = []
+    if pix.n == 4:
+        img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+    elif pix.n == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
 
+    return doc, page, img, scale
+
+# --- LA NUEVA LÓGICA TIPO CANVA (OBJETOS NATIVOS) ---
+def extraer_objetos_pdf(page, image_bgr, scale: float):
+    piezas = []
+    idx = 0
+    
+    # 1. EXTRACCIÓN DE TEXTO MEDIANTE OBJETOS DEL PDF
+    # Lee exactamente cómo se diseñó el archivo, letra por letra
+    data = page.get_text("rawdict")
+    for block in data.get("blocks", []):
+        if block.get("type") == 0:  # Tipo 0 = Texto
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    for char in span.get("chars", []):
+                        ch = char.get("c", "")
+                        bbox = char.get("bbox")
+                        
+                        # Ignorar espacios en blanco o nulos
+                        if not ch.strip() or not bbox:
+                            continue
+                            
+                        x0, y0, x1, y1 = bbox
+                        
+                        # Añadir un mini margen para no cortar los bordes de la fuente
+                        margen = 2 / scale
+                        x0 -= margen
+                        y0 -= margen
+                        x1 += margen
+                        y1 += margen
+                        
+                        px0 = int(x0 * scale)
+                        py0 = int(y0 * scale)
+                        px1 = int(x1 * scale)
+                        py1 = int(y1 * scale)
+                        
+                        # Asegurar que no nos salimos de la imagen
+                        px0 = max(0, px0)
+                        py0 = max(0, py0)
+                        px1 = min(image_bgr.shape[1], px1)
+                        py1 = min(image_bgr.shape[0], py1)
+                        
+                        w = px1 - px0
+                        h = py1 - py0
+                        
+                        if w < 5 or h < 5: 
+                            continue
+
+                        # Recortar usando las coordenadas exactas del objeto PDF
+                        crop = image_bgr[py0:py1, px0:px1].copy()
+                        crop_transparent = limpiar_fondo_blanco(crop)
+                        
+                        # Si el recorte resultó vacío, lo ignoramos
+                        if np.count_nonzero(crop_transparent[:, :, 3]) == 0:
+                            continue
+
+                        piezas.append({
+                            "id": f"pieza_obj_{idx}",
+                            "src": image_to_base64_png(crop_transparent),
+                            "char": ch,
+                            "confidence": "pdf_object",
+                            "x": px0,
+                            "y": py0,
+                            "w": w,
+                            "h": h,
+                            "propor": float(w / h) if h else 1,
+                            "fila": 0,
+                            "color": color_dominante(crop_transparent),
+                            "partes": 1
+                        })
+                        idx += 1
+
+    # 2. PLAN B (VECTORES / CURVAS / IMÁGENES)
+    # Si subiste un diseño donde las letras están convertidas a vectores (outlines)
+    # o hay logos, usamos una máscara para buscar todo lo que NO fue detectado en el paso 1.
+    
+    # Crear máscara tapando el texto que ya encontramos
+    mask_cv = np.ones(image_bgr.shape[:2], dtype=np.uint8) * 255
+    for p in piezas:
+        mask_cv[p["y"]:p["y"]+p["h"], p["x"]:p["x"]+p["w"]] = 0
+        
+    lower_white = np.array([230, 230, 230], dtype=np.uint8)
+    upper_white = np.array([255, 255, 255], dtype=np.uint8)
+    mask_white = cv2.inRange(image_bgr, lower_white, upper_white)
+    thresh = cv2.bitwise_not(mask_white)
+    
+    # Filtrar solo las áreas que no son texto
+    thresh = cv2.bitwise_and(thresh, thresh, mask=mask_cv)
+    
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     for cnt in contours:
         area = cv2.contourArea(cnt)
         x, y, w, h = cv2.boundingRect(cnt)
-
-        if area > min_area and w >= 2 and h >= 2:
-            cajas.append({
-                "x": int(x),
-                "y": int(y),
-                "w": int(w),
-                "h": int(h),
-                "area": float(area)
-            })
-
-    grupos_finales = agrupar_partes_caracter(cajas)
-
-    # Ordenar izquierda a derecha, y por bloques de texto.
-    grupos_finales.sort(key=lambda g: (round(g["y"] / 40) * 40, g["x"]))
-
-    piezas = []
-
-    for idx, grupo in enumerate(grupos_finales):
-        margen = 3 
-
-        x = max(0, grupo["x"] - margen)
-        y = max(0, grupo["y"] - margen)
-        w = min(image_bgr.shape[1] - x, grupo["w"] + margen * 2)
-        h = min(image_bgr.shape[0] - y, grupo["h"] + margen * 2)
-
-        crop = image_bgr[y:y + h, x:x + w].copy()
-        crop_transparent = limpiar_fondo_blanco(crop)
-
-        base64_png = image_to_base64_png(crop_transparent)
-        suggested_char = buscar_match_pdf(grupo, elementos_pdf)
-
-        piezas.append({
-            "id": f"pieza_{idx}",
-            "src": base64_png,
-            "char": suggested_char,
-            "confidence": "pdf_match" if suggested_char else "manual",
-            "x": int(x),
-            "y": int(y),
-            "w": int(w),
-            "h": int(h),
-            "propor": float(w / h) if h else 1,
-            "fila": 0,
-            "color": color_dominante(crop_transparent),
-            "partes": len(grupo.get("partes", []))
-        })
-
+        
+        # Tamaño mínimo de objetos vectoriales a recuperar
+        if area > 15 and w >= 5 and h >= 5:
+            margen = 4
+            x0 = max(0, x - margen)
+            y0 = max(0, y - margen)
+            x1 = min(image_bgr.shape[1], x + w + margen)
+            y1 = min(image_bgr.shape[0], y + h + margen)
+            
+            crop = image_bgr[y0:y1, x0:x1].copy()
+            crop_transparent = limpiar_fondo_blanco(crop)
+            
+            if np.count_nonzero(crop_transparent[:, :, 3]) > 0:
+                piezas.append({
+                    "id": f"pieza_obj_{idx}",
+                    "src": image_to_base64_png(crop_transparent),
+                    "char": "?",  # No sabemos qué letra es porque es un vector/imagen
+                    "confidence": "vector_fallback",
+                    "x": int(x0),
+                    "y": int(y0),
+                    "w": int(x1 - x0),
+                    "h": int(y1 - y0),
+                    "propor": float((x1 - x0) / (y1 - y0)) if (y1 - y0) else 1,
+                    "fila": 0,
+                    "color": color_dominante(crop_transparent),
+                    "partes": 1
+                })
+                idx += 1
+                
+    # Ordenar las piezas como se leen (arriba hacia abajo, izquierda a derecha)
+    piezas.sort(key=lambda p: (round(p["y"] / 40) * 40, p["x"]))
+    
     return piezas
-
 
 @app.get("/api/extract")
 def home():
@@ -309,7 +215,6 @@ def home():
         "service": "Gang Sheet Studio Extractor",
         "endpoint": "/api/extract"
     }
-
 
 @app.post("/api/extract")
 async def extract_pdf(
@@ -327,18 +232,10 @@ async def extract_pdf(
             }, status_code=400)
 
         doc, pdf_page, rendered_image, real_scale = render_pdf_page(
-            pdf_bytes,
-            page_number=page,
-            scale=scale
+            pdf_bytes, page_number=page, scale=scale
         )
 
-        elementos_pdf = extract_pdf_text_positions(pdf_page, real_scale)
-
-        piezas = detectar_piezas(
-            rendered_image,
-            elementos_pdf=elementos_pdf,
-            min_area=8 
-        )
+        piezas = extraer_objetos_pdf(pdf_page, rendered_image, real_scale)
 
         return JSONResponse({
             "ok": True,
