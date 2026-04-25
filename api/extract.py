@@ -329,8 +329,10 @@ def detectar_piezas(
 
     return piezas
 
+# -- CORRECCIÓN APLICADA AQUÍ --
+# Cambiamos "/" por "/api/extract" para que coincida con la ruta de Vercel
 
-@app.get("/")
+@app.get("/api/extract")
 def home():
     return {
         "ok": True,
@@ -339,7 +341,7 @@ def home():
     }
 
 
-@app.post("/")
+@app.post("/api/extract")
 async def extract_pdf(
     file: UploadFile = File(...),
     page: int = Form(0),
