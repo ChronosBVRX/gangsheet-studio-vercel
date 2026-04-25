@@ -266,20 +266,27 @@
     .gallery-item {
       position: relative;
       background-color: #1e293b;
-      border: 1px solid #334155;
+      border: 2px solid #334155;
       border-radius: 6px;
       padding: 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 8px;
-      transition: transform 0.2s;
+      transition: all 0.2s;
     }
 
     .gallery-item:hover {
       transform: scale(1.05);
       border-color: var(--primary-color);
       z-index: 5;
+    }
+
+    /* ESTILO CUANDO ESTÁ SELECCIONADA LA PIEZA */
+    .gallery-item:has(input[type="checkbox"]:checked) {
+      border-color: var(--secondary-color);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+      background-color: #1f2f3f;
     }
 
     .gallery-item img {
@@ -358,6 +365,35 @@
     .btn-delete-piece:hover {
       background-color: #b91c1c;
       transform: scale(1.1);
+    }
+
+    /* ESTILO DEL CHECKBOX */
+    .checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+      margin-top: 5px;
+      cursor: pointer;
+      font-weight: bold;
+      width: 100%;
+      justify-content: center;
+      background: #0b1120;
+      padding: 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+    }
+
+    .checkbox-container:hover {
+      background: #1e293b;
+    }
+
+    .checkbox-container input {
+      accent-color: var(--secondary-color);
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
     }
 
     .btn-add,
@@ -705,9 +741,9 @@
 
         <div class="form-group" style="margin-top: 15px;">
           <label>4. Guardar tipografía en Supabase:</label>
-          <button id="btn-save-abc" class="btn-save-abc" onclick="guardarAbecedarioSupabase()">Guardar en Base de Datos</button>
+          <button id="btn-save-abc" class="btn-save-abc" onclick="guardarAbecedarioSupabase()">Guardar Selección en Base de Datos</button>
           <p style="font-size: 0.8rem; color: #64748b; text-align: left; margin-top: 10px;">
-            Verifique cada carácter. Si una pieza sale mal, elimínela o corrija manualmente la letra/número.
+            Marque la casilla "Seleccionar" en las letras que desea guardar. Las demás serán ignoradas.
           </p>
         </div>
       </div>
@@ -1074,7 +1110,7 @@
       formData.append("min_area", minArea);
 
       try {
-        const response = await fetch("/api/extract", {
+        const response = await fetch("https://gangsheet-studio-vercel.vercel.app/api/extract", {
           method: "POST",
           body: formData
         });
@@ -1100,8 +1136,11 @@
             h: pieza.h
           });
 
+          // Si detectó una letra válida (no vacía y no '?'), lo marca por defecto.
+          const isChecked = (pieza.char && pieza.char !== '?') ? 'checked' : '';
+
           gallery.insertAdjacentHTML('beforeend', `
-            <div class="gallery-item" id="card_${pieza.id}" style="border-bottom: 4px solid ${pieza.color || '#334155'};">
+            <div class="gallery-item" id="card_${pieza.id}">
               <button class="btn-delete-piece" onclick="eliminarPiezaGaleria('${pieza.id}')" title="Descartar imagen">✕</button>
               <img src="${pieza.src}">
               <input
@@ -1114,6 +1153,9 @@
               <select class="style-mapper" id="style_${pieza.id}">
                 ${generarOpcionesEstilos()}
               </select>
+              <label class="checkbox-container">
+                <input type="checkbox" id="check_${pieza.id}" ${isChecked}> Seleccionar
+              </label>
             </div>
           `);
         });
@@ -1140,14 +1182,13 @@
 
     function eliminarPiezaGaleria(idPieza) {
       const card = document.getElementById(`card_${idPieza}`);
-
       if (card) {
         card.remove();
       }
-
       piezasExtraidasTemp = piezasExtraidasTemp.filter(p => p.id !== idPieza);
     }
 
+    // AQUI ESTÁ LA MAGIA DEL GUARDADO SELECTIVO
     async function guardarAbecedarioSupabase() {
       let nombreFuente = document.getElementById('font-custom-name').value.trim();
 
@@ -1162,36 +1203,40 @@
       piezasExtraidasTemp.forEach(pieza => {
         const inputChar = document.getElementById(`map_${pieza.id}`);
         const estiloInput = document.getElementById(`style_${pieza.id}`);
+        const checkbox = document.getElementById(`check_${pieza.id}`);
 
-        if (!inputChar || !estiloInput) return;
+        if (!inputChar || !estiloInput || !checkbox) return;
 
-        let char = inputChar.value.trim().toUpperCase();
-        let estilo = estiloInput.value.trim().toUpperCase() || "DEFECTO";
+        // SOLO PROCEDE SI LA CASILLA ESTÁ MARCADA
+        if (checkbox.checked) {
+            let char = inputChar.value.trim().toUpperCase();
+            let estilo = estiloInput.value.trim().toUpperCase() || "DEFECTO";
 
-        if (char) {
-          if (!abcNuevo[estilo]) {
-            abcNuevo[estilo] = {};
-          }
+            if (char) {
+              if (!abcNuevo[estilo]) {
+                abcNuevo[estilo] = {};
+              }
 
-          abcNuevo[estilo][char] = {
-            src: pieza.src,
-            propor: pieza.propor,
-            color: pieza.color || "#000000",
-            meta: {
-              fila: pieza.fila,
-              x: pieza.x,
-              y: pieza.y,
-              w: pieza.w,
-              h: pieza.h
+              abcNuevo[estilo][char] = {
+                src: pieza.src,
+                propor: pieza.propor,
+                color: pieza.color || "#000000",
+                meta: {
+                  fila: pieza.fila,
+                  x: pieza.x,
+                  y: pieza.y,
+                  w: pieza.w,
+                  h: pieza.h
+                }
+              };
+
+              guardadas++;
             }
-          };
-
-          guardadas++;
         }
       });
 
       if (guardadas === 0) {
-        alert("Debe asignar al menos un carácter válido.");
+        alert("Debe seleccionar (marcar casilla) al menos un carácter válido para guardar.");
         return;
       }
 
@@ -1214,7 +1259,7 @@
         document.getElementById('font-custom-name').value = "";
         document.getElementById('pdf-gallery-master').innerHTML = `
           <div style="grid-column: 1 / -1; text-align: center; color: #64748b; font-size: 1.1rem; padding: 50px;">
-            Registro completado. Puede cargar un nuevo documento.
+            ¡Se guardaron ${guardadas} caracteres con éxito! Puede cargar un nuevo documento.
           </div>
         `;
 
@@ -1224,7 +1269,7 @@
       } catch (e) {
         alert("Error con Supabase: " + e.message);
       } finally {
-        btnSave.textContent = "Guardar en Base de Datos";
+        btnSave.textContent = "Guardar Selección en Base de Datos";
         btnSave.disabled = false;
       }
     }
@@ -1368,7 +1413,6 @@
 
     document.getElementById('font-upload').addEventListener('change', function(e) {
       const file = e.target.files[0];
-
       if (!file) return;
 
       const reader = new FileReader();
@@ -1387,16 +1431,13 @@
 
     document.getElementById('image-upload').addEventListener('change', function(e) {
       const file = e.target.files[0];
-
       if (!file) return;
 
       nombreImgSuela = file.name;
-
       const reader = new FileReader();
 
       reader.onload = function(ev) {
         imagenUnicaBase64 = ev.target.result;
-
         const img = new Image();
 
         img.onload = function() {
@@ -1485,7 +1526,7 @@
               <b>${item.cantidad}x</b> ${item.nombreMostrar}
               (${(item.ancho / PIXELES_POR_CM).toFixed(1)}x${(item.alto / PIXELES_POR_CM).toFixed(1)}cm)
             </span>
-            <button style="background:none; border:none; color:#ef4444; cursor:pointer; padding:5px;" onclick="eliminarDeCola(${index})">✕</button>
+            <button style="background:none; border:none; color:#ef4444; cursor:pointer; padding:5px; font-weight:bold;" onclick="eliminarDeCola(${index})">✕</button>
           </div>
         `);
       });
