@@ -1,7 +1,9 @@
-{
-  "functions": {
-    "api/extract.py": {
-      "maxDuration": 60
-    }
-  }
-}
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
+
+# La ruta DEBE ser exactamente el path del archivo
+@app.route('/api/extract', methods=['POST'])
+def extract_pdf():
+    # Tu lógica de procesamiento aquí...
+    return jsonify({"ok": True, "pieces": []})
