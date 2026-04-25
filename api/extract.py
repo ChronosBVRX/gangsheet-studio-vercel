@@ -35,23 +35,29 @@ def color_dominante(crop_bgra: np.ndarray) -> str:
     return f"#{int(np.mean(r[mask])):02X}{int(np.mean(g[mask])):02X}{int(np.mean(b[mask])):02X}"
 
 def limpiar_fondo_inteligente(crop: np.ndarray) -> np.ndarray:
-    """Lee el perímetro de la imagen para borrar inteligentemente el fondo sin tocar la letra."""
+    """Analiza los 2 píxeles más externos del recorte para saber qué color es el fondo y borrarlo."""
     bgra = crop.copy()
     h, w = bgra.shape[:2]
     if h < 4 or w < 4: return bgra
 
-    # Leer todos los píxeles del contorno exterior
-    perimetro = np.concatenate([bgra[0, :], bgra[-1, :], bgra[:, 0], bgra[:, -1]])
+    # Capturar el marco perimetral
+    top = bgra[0:2, :].reshape(-1, 4)
+    bottom = bgra[h-2:h, :].reshape(-1, 4)
+    left = bgra[:, 0:2].reshape(-1, 4)
+    right = bgra[:, w-2:w].reshape(-1, 4)
     
+    perimetro = np.concatenate([top, bottom, left, right])
     opacos = perimetro[perimetro[:, 3] > 0]
-    # Si menos del 20% del perímetro es opaco, significa que ya está transparente.
-    if len(opacos) < (h + w) * 0.2: 
+    
+    # Si el perímetro ya es transparente, no tocamos nada
+    if len(opacos) < len(perimetro) * 0.1: 
         return bgra
 
+    # Encontrar el color que más se repite en el borde
     colores, cuentas = np.unique(opacos[:, :3], axis=0, return_counts=True)
     color_fondo = colores[np.argmax(cuentas)]
 
-    # Si el color predominante no representa una buena parte del borde, no es un fondo sólido
+    # Si el color dominante no es claro, lo dejamos quieto
     if np.max(cuentas) < len(opacos) * 0.3:
         return bgra
 
@@ -61,157 +67,152 @@ def limpiar_fondo_inteligente(crop: np.ndarray) -> np.ndarray:
 
     mask_fondo = cv2.inRange(bgra[:, :, :3], lower, upper)
     
-    # Prevención: Si resulta que toda la imagen es de ese color, no la borramos completa
-    if np.count_nonzero(mask_fondo) == h * w:
-        return bgra
-        
-    bgra[mask_fondo > 0, 3] = 0
+    # Borrar fondo solo si no destruye la letra completa
+    if np.count_nonzero(mask_fondo) < h * w * 0.95:
+        bgra[mask_fondo > 0, 3] = 0
+            
     return bgra
 
-def calculate_overlap(b1, b2):
-    """Calcula qué tanto están apilados dos objetos (ideal para unir bordes y rellenos)"""
-    x_left = max(b1[0], b2[0])
-    y_top = max(b1[1], b2[1])
-    x_right = min(b1[2], b2[2])
-    y_bottom = min(b1[3], b2[3])
-    
-    if x_right <= x_left or y_bottom <= y_top: return 0.0
-    
-    inter = (x_right - x_left) * (y_bottom - y_top)
-    a1 = (b1[2] - b1[0]) * (b1[3] - b1[1])
-    a2 = (b2[2] - b2[0]) * (b2[3] - b2[1])
-    
-    return inter / min(a1, a2) if min(a1, a2) > 0 else 0
+def contar_hijos(i: int, hierarchy: np.ndarray) -> int:
+    """Cuenta cuántos elementos hay dentro de un contorno"""
+    count = 0
+    child = hierarchy[i][2]
+    while child != -1:
+        count += 1
+        child = hierarchy[child][0]
+    return count
 
 def merge_boxes(b1, b2):
     return [min(b1[0], b2[0]), min(b1[1], b2[1]), max(b1[2], b2[2]), max(b1[3], b2[3])]
 
-def agrupar_vectores(vectores):
-    """Agrupa vectores SOLO si están apilados como capas o si son modificadores (como puntos o tildes)."""
-    grupos = []
-    for v in vectores:
-        matched = False
-        for g in grupos:
-            overlap = calculate_overlap(g["bbox"], v["bbox"])
-            
-            # Detectar modificadores (puntos sobre la i, acentos)
-            b1, b2 = g["bbox"], v["bbox"]
-            x_overlap = min(b1[2], b2[2]) - max(b1[0], b2[0])
-            y_dist = min(abs(b1[1] - b2[3]), abs(b2[1] - b1[3]))
-            alt_min = min(b1[3]-b1[1], b2[3]-b2[1])
-            
-            is_mod = (x_overlap > 0) and (y_dist < alt_min * 1.5) and (b1[3]<b2[1] or b2[3]<b1[1])
-
-            # Solo fusionar si hay más del 15% de overlap (están uno sobre otro) o si es un acento
-            if overlap > 0.15 or is_mod:
-                g["bbox"] = merge_boxes(g["bbox"], v["bbox"])
-                matched = True
-                break
-        if not matched:
-            grupos.append(v)
-            
-    return grupos
-
-def extraer_objetos_pdf_nativos(page, scale: float):
-    pix_alpha = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=True)
-    img_bgra = np.frombuffer(pix_alpha.samples, dtype=np.uint8).reshape(pix_alpha.height, pix_alpha.width, pix_alpha.n)
-    
-    if pix_alpha.n == 3: img_bgra = cv2.cvtColor(img_bgra, cv2.COLOR_RGB2BGRA)
+def procesar_vision(page, scale):
+    # 1. Renderizamos la imagen visual (WYSIWYG - Lo que ves es lo que hay)
+    pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=True)
+    img_bgra = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
+    if pix.n == 3: img_bgra = cv2.cvtColor(img_bgra, cv2.COLOR_RGB2BGRA)
     else: img_bgra = cv2.cvtColor(img_bgra, cv2.COLOR_RGBA2BGRA)
 
-    page_w = page.rect.width * scale
-    page_h = page.rect.height * scale
-
-    textos = []
-    vectores = []
-
-    # 1. LEER TEXTOS NATIVOS
-    data = page.get_text("rawdict")
-    allowed_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñ.,;:-_!?'\"()[]{}@*/\\&#%+=$€"
+    # 2. Detección de Contornos (Canny) - Ignora el color, busca solo las formas
+    gray = cv2.cvtColor(img_bgra, cv2.COLOR_BGRA2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    edges = cv2.Canny(blurred, 30, 150)
     
-    for block in data.get("blocks", []):
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel)
+
+    contours, hierarchy = cv2.findContours(closed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    cajas = []
+    if hierarchy is not None:
+        hierarchy = hierarchy[0]
+        for i, cnt in enumerate(contours):
+            x, y, w, h = cv2.boundingRect(cnt)
+            area = w * h
+            
+            # Filtrar basura microscópica
+            if area < 20 or w < 4 or h < 4: continue
+            
+            # MAGIA: Si tiene más de 3 hijos (como un banner), lo saltamos.
+            hijos = contar_hijos(i, hierarchy)
+            if hijos > 3: continue 
+            
+            # MAGIA: Si está dentro de una letra válida (ej. el hueco de la O), lo saltamos.
+            padre = hierarchy[i][3]
+            if padre != -1:
+                hijos_padre = contar_hijos(padre, hierarchy)
+                if hijos_padre <= 3: continue 
+                
+            cajas.append({"bbox": [x, y, x+w, y+h]})
+
+    # 3. Agrupar piezas dependientes (El punto de la 'i' o la tilde de la 'Ñ')
+    grupos = []
+    for caja in cajas:
+        matched = False
+        for g in grupos:
+            b1 = g["bbox"]
+            b2 = caja["bbox"]
+            
+            x_overlap = min(b1[2], b2[2]) - max(b1[0], b2[0])
+            if x_overlap > -2:  # Están en la misma columna vertical
+                h1 = b1[3] - b1[1]
+                h2 = b2[3] - b2[1]
+                alt_peq = min(h1, h2)
+                alt_gran = max(h1, h2)
+                y_dist = min(abs(b1[1] - b2[3]), abs(b2[1] - b1[3]))
+                
+                # Solo agrupar si uno es mucho más chico (tilde/punto) y están muy cerca
+                if (alt_peq < alt_gran * 0.5) and (y_dist < alt_peq * 2.0):
+                    g["bbox"] = merge_boxes(b1, b2)
+                    matched = True
+                    break
+        if not matched:
+            grupos.append(caja)
+
+    # 4. Leer texto nativo solo para sugerir letras (si el PDF no tiene las letras en curvas)
+    textos_nativos = []
+    for block in page.get_text("dict").get("blocks", []):
         if block.get("type") == 0:
             for line in block.get("lines", []):
                 for span in line.get("spans", []):
                     for char in span.get("chars", []):
                         ch = char.get("c", "")
                         bbox = char.get("bbox")
-                        if ch in allowed_chars and bbox:
-                            textos.append({
+                        if ch.strip() and bbox:
+                            textos_nativos.append({
                                 "char": ch,
-                                "bbox": [bbox[0]*scale, bbox[1]*scale, bbox[2]*scale, bbox[3]*scale]
+                                "cx": (bbox[0]+bbox[2])*scale/2,
+                                "cy": (bbox[1]+bbox[3])*scale/2
                             })
 
-    # 2. LEER OBJETOS VECTORIALES (Eliminando fondos gigantes)
-    for path in page.get_drawings():
-        bbox = path["rect"]
-        w = bbox.width * scale
-        h = bbox.height * scale
-        
-        # Filtro: Si abarca más del 40% del ancho o alto de la página, es un banner/fondo. ¡Ignorarlo!
-        if w > page_w * 0.4 or h > page_h * 0.4: continue
-        
-        if w > 3 and h > 3:
-            vectores.append({
-                "char": "?",
-                "bbox": [bbox.x0*scale, bbox.y0*scale, bbox.x1*scale, bbox.y1*scale]
-            })
-
-    # 3. FILTRAR DUPLICADOS Y AGRUPAR VECTORES
-    vectores_filtrados = []
-    for v in vectores:
-        es_duplicado = False
-        for t in textos:
-            # Si un vector envuelve exactamente a un texto, es su contorno duplicado. Lo omitimos.
-            if calculate_overlap(v["bbox"], t["bbox"]) > 0.5:
-                es_duplicado = True
-                break
-        if not es_duplicado:
-            vectores_filtrados.append(v)
-
-    grupos_vectores = agrupar_vectores(vectores_filtrados)
-    
-    # Juntar todo (Textos individuales + Vectores Agrupados)
-    todas_las_piezas = textos + grupos_vectores
-
-    piezas_finales = []
+    piezas = []
     idx = 0
-    
-    for obj in todas_las_piezas:
-        x0, y0, x1, y1 = obj["bbox"]
+    for g in grupos:
+        x0, y0, x1, y1 = g["bbox"]
         
-        # Margen de protección para que el limpiador no toque la letra real
-        margen = 4
-        x0 = max(0, int(x0) - margen)
-        y0 = max(0, int(y0) - margen)
-        x1 = min(img_bgra.shape[1], int(x1) + margen)
-        y1 = min(img_bgra.shape[0], int(y1) + margen)
-        
-        w, h = x1 - x0, y1 - y0
-        if w < 5 or h < 5: continue
+        # Le damos un margen para que el Limpiador de Fondo tenga de dónde "leer" el color perimetral
+        margen = 5
+        x0 = max(0, x0 - margen)
+        y0 = max(0, y0 - margen)
+        x1 = min(img_bgra.shape[1], x1 + margen)
+        y1 = min(img_bgra.shape[0], y1 + margen)
         
         crop = img_bgra[y0:y1, x0:x1].copy()
         crop_clean = limpiar_fondo_inteligente(crop)
         
-        # Si quedó vacío tras limpiar, descartar
         if np.count_nonzero(crop_clean[:, :, 3]) == 0: continue
         
-        piezas_finales.append({
+        cx = (x0 + x1) / 2
+        cy = (y0 + y1) / 2
+        
+        # Asignar la letra correspondiente si se puede (si no, queda en "?")
+        char_sugerido = "?"
+        mejor_dist = float('inf')
+        mejor_t_idx = -1
+        
+        for i_t, t in enumerate(textos_nativos):
+            dist = ((cx - t["cx"])**2 + (cy - t["cy"])**2)**0.5
+            if dist < min(x1-x0, y1-y0) * 0.8 and dist < mejor_dist:
+                mejor_dist = dist
+                mejor_t_idx = i_t
+                
+        if mejor_t_idx != -1:
+            char_sugerido = textos_nativos[mejor_t_idx]["char"]
+            textos_nativos.pop(mejor_t_idx)  # Quitamos la letra usada
+
+        piezas.append({
             "id": f"pieza_{idx}",
             "src": image_to_base64_png(crop_clean),
-            "char": obj["char"],
-            "confidence": "pdf_object",
-            "x": x0, "y": y0, "w": w, "h": h,
-            "propor": w/h if h else 1,
+            "char": char_sugerido,
+            "x": x0, "y": y0, "w": x1-x0, "h": y1-y0,
+            "propor": (x1-x0)/(y1-y0) if (y1-y0) else 1,
             "fila": 0,
-            "color": color_dominante(crop_clean),
-            "partes": 1
+            "color": color_dominante(crop_clean)
         })
         idx += 1
 
-    # Ordenar lectura: arriba hacia abajo, izquierda a derecha
-    piezas_finales.sort(key=lambda p: (round(p["y"] / 40) * 40, p["x"]))
-    return piezas_finales
+    # Ordenar izquierda a derecha, arriba a abajo
+    piezas.sort(key=lambda p: (round(p["y"] / 40) * 40, p["x"]))
+    return piezas
 
 @app.get("/api/extract")
 def home():
@@ -232,7 +233,7 @@ async def extract_pdf(
         if page < 0 or page >= len(doc): page = 0
         pdf_page = doc[page]
 
-        piezas = extraer_objetos_pdf_nativos(pdf_page, scale)
+        piezas = procesar_vision(pdf_page, scale)
 
         return JSONResponse({
             "ok": True,
