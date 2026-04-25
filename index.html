@@ -4,13 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <title>Gang Sheet Studio | Celular</title>
+  <title>Gang Sheet Studio | Chronos</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/opentype.js@latest/dist/opentype.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     :root {
       --primary-color: #f59e0b;
       --primary-hover: #d97706;
       --secondary-color: #10b981;
+      --secondary-hover: #059669;
       --danger-color: #ef4444;
       --bg-color: #0f172a;
       --panel-bg: #1e293b;
@@ -20,7 +25,7 @@
       --topbar-bg: #0b1120;
     }
 
-    * {
+    *, *::before, *::after {
       box-sizing: border-box;
     }
 
@@ -29,150 +34,233 @@
       background-color: var(--bg-color);
       color: var(--text-color);
       margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
       min-height: 100vh;
     }
 
     .top-navbar {
       background-color: var(--topbar-bg);
-      padding: 15px;
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       border-bottom: 2px solid var(--primary-color);
       box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+      z-index: 100;
+      gap: 15px;
+      flex-wrap: wrap;
     }
 
-    .brand h1 {
+    .top-navbar .brand {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .top-navbar h1 {
       margin: 0;
-      font-size: 1.1rem;
+      font-size: 1.5rem;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-transform: uppercase;
       letter-spacing: 1px;
     }
 
-    .developer-credit {
-      font-size: 0.7rem;
+    .top-navbar .developer-credit {
+      font-size: 0.75rem;
       color: #94a3b8;
-      letter-spacing: 1px;
+      letter-spacing: 1.5px;
+      margin-top: 3px;
       font-weight: 600;
-      margin-top: 4px;
     }
 
-    .main {
-      padding: 12px;
+    .nav-buttons {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .nav-btn {
+      background-color: transparent;
+      border: 2px solid var(--border-color);
+      color: #94a3b8;
+      padding: 10px 20px;
+      font-weight: bold;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .nav-btn.active {
+      background-color: var(--primary-color);
+      border-color: var(--primary-color);
+      color: #000;
+    }
+
+    .nav-btn:hover:not(.active) {
+      background-color: var(--border-color);
+      color: white;
+    }
+
+    .env-wrapper {
+      display: none;
+      padding: 20px;
+      justify-content: center;
+      flex-grow: 1;
+    }
+
+    .env-wrapper.active-env {
+      display: flex;
     }
 
     .app-container {
       display: flex;
-      flex-direction: column;
-      gap: 16px;
+      gap: 20px;
+      max-width: 1700px;
       width: 100%;
+      height: fit-content;
     }
 
-    .controls-panel,
-    .preview-panel {
+    .controls-panel {
       background-color: var(--panel-bg);
-      padding: 16px;
+      padding: 25px;
       border-radius: 12px;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      width: 450px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      z-index: 10;
+    }
+
+    .preview-panel {
+      background-color: var(--panel-bg);
+      padding: 25px;
+      border-radius: 12px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
       width: 100%;
     }
 
-    h2 {
+    .controls-panel h2,
+    .preview-panel h2 {
       margin-top: 0;
+      margin-bottom: 5px;
+      color: #ffffff;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 10px;
-      font-size: 1rem;
+      font-size: 1.2rem;
     }
 
     .form-group {
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-bottom: 12px;
+      gap: 5px;
     }
 
-    label {
+    .form-group label {
       font-weight: 600;
-      font-size: 0.82rem;
+      font-size: 0.85rem;
       color: #94a3b8;
     }
 
-    input[type="text"],
-    input[type="number"],
-    input[type="file"],
-    select {
-      padding: 11px;
+    .form-group input[type="text"],
+    .form-group input[type="number"],
+    .form-group select,
+    .form-group input[type="color"] {
+      padding: 10px;
       background-color: #0f172a;
       color: white;
       border: 1px solid var(--border-color);
       border-radius: 6px;
       font-size: 1rem;
       width: 100%;
+      text-transform: uppercase;
     }
 
-    input[type="file"] {
+    .form-group input[type="file"] {
+      padding: 8px;
+      background-color: #0f172a;
       border: 1px dashed var(--primary-color);
-      font-size: 0.85rem;
-      cursor: pointer;
-    }
-
-    .btn-scan,
-    .btn-save,
-    .btn-clear {
-      width: 100%;
-      border: none;
       border-radius: 6px;
+      font-size: 0.85rem;
+      color: white;
       cursor: pointer;
-      font-family: inherit;
-      font-weight: bold;
-      padding: 14px;
-      font-size: 1rem;
-      transition: all 0.2s;
-      margin-bottom: 10px;
+      width: 100%;
     }
 
-    .btn-scan {
+    .form-group input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: var(--highlight);
+    }
+
+    .dimensions-container {
+      display: flex;
+      gap: 10px;
+      background-color: #0f172a;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+    }
+
+    .dimensions-container .form-group {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .type-selector {
+      display: flex;
+      background-color: #0f172a;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    .type-btn {
+      flex: 1;
+      min-width: 30%;
+      padding: 10px 5px;
+      text-align: center;
+      cursor: pointer;
+      font-weight: bold;
+      font-size: 0.8rem;
+      background: transparent;
+      color: #94a3b8;
+      border: none;
+      transition: 0.3s;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .type-btn.active {
       background-color: var(--highlight);
       color: white;
+      border-bottom: none;
     }
 
-    .btn-save {
-      background-color: var(--primary-color);
-      color: #000;
-    }
-
-    .btn-clear {
-      background-color: transparent;
-      color: var(--danger-color);
-      border: 1px solid var(--danger-color);
-    }
-
-    .loader {
-      display: none;
-      color: var(--primary-color);
-      font-weight: bold;
-      text-align: center;
-      font-size: 0.9rem;
-      margin-bottom: 12px;
-    }
-
-    .info-box {
-      background: #0f172a;
-      border: 1px solid var(--border-color);
-      padding: 12px;
-      border-radius: 8px;
-      color: #cbd5e1;
-      font-size: 0.84rem;
-      line-height: 1.4;
-      margin-bottom: 12px;
+    .hidden-panel {
+      display: none !important;
     }
 
     .pdf-gallery-master {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 15px;
       max-height: 70vh;
       overflow-y: auto;
       background-color: #0f172a;
-      padding: 12px;
+      padding: 20px;
       border: 1px solid var(--border-color);
       border-radius: 8px;
+      flex-grow: 1;
     }
 
     .gallery-item {
@@ -180,11 +268,18 @@
       background-color: #1e293b;
       border: 1px solid #334155;
       border-radius: 6px;
-      padding: 10px;
+      padding: 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 8px;
+      transition: transform 0.2s;
+    }
+
+    .gallery-item:hover {
+      transform: scale(1.05);
+      border-color: var(--primary-color);
+      z-index: 5;
     }
 
     .gallery-item img {
@@ -197,39 +292,36 @@
         linear-gradient(45deg, transparent 75%, #334155 75%),
         linear-gradient(-45deg, transparent 75%, #334155 75%);
       background-size: 10px 10px;
-      background-position: 0 0, 0 5px, 5px -5px, -5px 0;
+      background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
       border-radius: 4px;
       padding: 5px;
     }
 
     .char-mapper {
-      width: 100%;
+      width: 100% !important;
       text-align: center;
       font-weight: bold;
-      font-size: 1.3rem;
-      border: 2px solid var(--border-color);
-      color: white;
-      background-color: #0f172a;
-      border-radius: 6px;
-      padding: 8px;
-      text-transform: uppercase;
+      font-size: 1.3rem !important;
+      border: 2px solid var(--border-color) !important;
+      color: white !important;
+      transition: 0.3s;
     }
 
-    .ocr-success {
-      border-color: var(--secondary-color);
-      background-color: rgba(16, 185, 129, 0.12);
+    .char-mapper.ocr-success {
+      border-color: var(--secondary-color) !important;
+      background-color: rgba(16, 185, 129, 0.1) !important;
     }
 
-    .ocr-doubt {
-      border-color: var(--danger-color);
-      background-color: rgba(239, 68, 68, 0.12);
+    .char-mapper.ocr-doubt {
+      border-color: var(--danger-color) !important;
+      background-color: rgba(239, 68, 68, 0.1) !important;
     }
 
-    .style-mapper {
-      width: 100%;
-      font-size: 0.75rem;
+    select.style-mapper {
+      width: 100% !important;
+      font-size: 0.75rem !important;
       text-align: center;
-      padding: 6px;
+      padding: 5px !important;
       border-radius: 4px;
       border: 1px solid var(--border-color);
       background-color: #0b1120;
@@ -237,6 +329,11 @@
       font-weight: bold;
       cursor: pointer;
       text-transform: uppercase;
+    }
+
+    select.style-mapper:focus {
+      border-color: var(--primary-color);
+      outline: none;
     }
 
     .btn-delete-piece {
@@ -251,53 +348,296 @@
       height: 24px;
       font-weight: bold;
       cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
       font-size: 0.8rem;
       box-shadow: 0 2px 5px rgba(0,0,0,0.5);
     }
 
-    .empty-state {
-      grid-column: 1 / -1;
-      text-align: center;
-      color: #64748b;
-      font-size: 1rem;
-      padding: 30px 10px;
+    .btn-delete-piece:hover {
+      background-color: #b91c1c;
+      transform: scale(1.1);
     }
 
-    pre {
-      background: #020617;
-      color: #cbd5e1;
+    .btn-add,
+    .btn-auto,
+    .btn-clear,
+    .btn-exportar-png,
+    .btn-exportar-pdf,
+    .btn-scan,
+    .btn-save-abc {
+      width: 100%;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-family: inherit;
+      font-weight: bold;
+    }
+
+    .btn-add {
+      background-color: var(--secondary-color);
+      color: white;
       padding: 12px;
-      border-radius: 8px;
-      overflow: auto;
-      max-height: 250px;
-      font-size: 0.72rem;
-      border: 1px solid var(--border-color);
-      white-space: pre-wrap;
-      word-break: break-word;
+      font-size: 0.95rem;
     }
 
-    @media (min-width: 900px) {
-      .main {
-        padding: 20px;
-      }
+    .btn-scan {
+      background-color: var(--highlight);
+      color: white;
+      padding: 15px;
+      font-size: 1.05rem;
+      margin-top: 10px;
+    }
 
+    .btn-save-abc {
+      background-color: var(--primary-color);
+      color: #000;
+      padding: 15px;
+      font-size: 1.1rem;
+      margin-top: 15px;
+      box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3);
+    }
+
+    .btn-save-abc:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-2px);
+    }
+
+    .btn-auto {
+      background-color: var(--primary-color);
+      color: #000;
+      padding: 15px;
+      font-size: 1.05rem;
+      margin-top: 10px;
+      box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3);
+    }
+
+    .btn-auto:hover {
+      background-color: var(--primary-hover);
+      transform: translateY(-2px);
+    }
+
+    .btn-clear {
+      background-color: transparent;
+      color: var(--danger-color);
+      border: 1px solid var(--danger-color);
+      padding: 10px;
+      font-size: 0.9rem;
+    }
+
+    .btn-exportar-png {
+      background-color: #334155;
+      color: white;
+      border: 1px solid #475569;
+      padding: 10px;
+      font-size: 0.9rem;
+    }
+
+    .btn-exportar-pdf {
+      background-color: #dc2626;
+      color: white;
+      padding: 10px;
+      font-size: 0.9rem;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    .queue-container {
+      background-color: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px;
+      max-height: 150px;
+      overflow-y: auto;
+    }
+
+    .queue-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background-color: #1e293b;
+      padding: 8px 10px;
+      margin-bottom: 5px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      border-left: 3px solid var(--primary-color);
+      word-break: break-all;
+    }
+
+    .advanced-options {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 5px;
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+
+    .advanced-options input[type="checkbox"] {
+      accent-color: var(--primary-color);
+      cursor: pointer;
+    }
+
+    .canvas-header {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      margin-bottom: 15px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn-clear-canvas {
+      background-color: transparent;
+      color: #94a3b8;
+      border: 1px solid #475569;
+      padding: 8px 12px;
+      font-size: 0.85rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .btn-clear-canvas:hover {
+      background-color: #334155;
+      color: white;
+      border-color: #94a3b8;
+    }
+
+    .canvas-header p {
+      margin: 0;
+      color: #94a3b8;
+      font-size: 0.9rem;
+    }
+
+    .status-message {
+      color: var(--secondary-color);
+      font-weight: bold;
+      font-size: 0.9rem;
+      display: block;
+      margin-top: 5px;
+    }
+
+    .canvas-container {
+      background-image:
+        linear-gradient(45deg, #1e293b 25%, transparent 25%),
+        linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1e293b 75%),
+        linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+      background-size: 20px 20px;
+      background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+      background-color: #0f172a;
+      border: 2px dashed var(--border-color);
+      border-radius: 4px;
+      box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+      display: flex;
+      position: relative;
+      height: 80vh;
+      max-height: 800px;
+      max-width: 100%;
+      aspect-ratio: 57 / 112;
+      overflow: hidden;
+      touch-action: none;
+      margin: 0 auto;
+    }
+
+    .canvas-container::after {
+      content: "ÁREA DE IMPRESIÓN";
+      position: absolute;
+      bottom: 5px;
+      right: 8px;
+      color: var(--border-color);
+      font-size: 0.7rem;
+      font-weight: bold;
+      letter-spacing: 2px;
+      opacity: 0.5;
+      pointer-events: none;
+    }
+
+    #svg-workspace {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .draggable-piece {
+      cursor: grab;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .draggable-piece:active {
+      cursor: grabbing;
+    }
+
+    #loader,
+    #cv-loader {
+      display: none;
+      color: #f59e0b;
+      font-size: 0.85rem;
+      text-align: center;
+      margin-top: 5px;
+      font-weight: bold;
+    }
+
+    .btn-delete-font {
+      background-color: transparent;
+      color: var(--danger-color);
+      border: none;
+      font-size: 0.8rem;
+      cursor: pointer;
+      text-decoration: underline;
+      margin-top: 5px;
+      display: block;
+      text-align: right;
+    }
+
+    @media (max-width: 1024px) {
       .app-container {
-        flex-direction: row;
-        max-width: 1600px;
-        margin: 0 auto;
+        flex-direction: column;
       }
 
       .controls-panel {
-        width: 400px;
-        flex-shrink: 0;
+        width: 100% !important;
       }
 
-      .preview-panel {
-        flex-grow: 1;
+      .canvas-container {
+        height: auto;
+        width: 100%;
+        max-height: 70vh;
+      }
+
+      .top-navbar {
+        padding: 15px;
+      }
+
+      .top-navbar h1 {
+        font-size: 1.15rem;
+      }
+
+      .nav-buttons {
+        width: 100%;
+      }
+
+      .nav-btn {
+        flex: 1;
+        padding: 10px;
+        font-size: 0.8rem;
       }
 
       .pdf-gallery-master {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
       }
     }
   </style>
@@ -307,93 +647,398 @@
   <div class="top-navbar">
     <div class="brand">
       <h1>GANG SHEET STUDIO</h1>
-      <div class="developer-credit">VERSIÓN CELULAR + BACKEND PYTHON</div>
+      <span class="developer-credit">DEVELOPED BY EDUARDO BOLAÑOS (CHRONOS)</span>
+    </div>
+
+    <div class="nav-buttons">
+      <button class="nav-btn active" id="nav-btn-extractor" onclick="switchEnvironment('extractor')">Módulo 1: Extracción</button>
+      <button class="nav-btn" id="nav-btn-produccion" onclick="switchEnvironment('produccion')">Módulo 2: Producción</button>
     </div>
   </div>
 
-  <main class="main">
+  <div id="env-extractor" class="env-wrapper active-env">
     <div class="app-container">
-      <section class="controls-panel">
-        <h2>Extractor de PDF</h2>
+      <div class="controls-panel" style="width: 400px;">
+        <h2>Procesamiento de Archivos</h2>
 
-        <div class="info-box">
-          Sube un PDF. El backend Python en Vercel extrae piezas y te regresa la galería editable.
+        <p style="color: #94a3b8; font-size: 0.9rem; margin-top: 0;">
+          Cargue un PDF. El backend Python extraerá las piezas visuales y las mostrará para corrección manual.
+        </p>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label style="color: var(--primary-color);">1. Nombre para la tipografía:</label>
+          <input type="text" id="font-custom-name" placeholder="Ej. AL NASSR LIGA 2025" style="border-color: var(--primary-color);">
         </div>
 
-        <div class="form-group">
-          <label>Nombre de la tipografía:</label>
-          <input type="text" id="font-custom-name" placeholder="Ej. AL NASSR LIGA 2025" />
+        <div class="form-group" style="margin-top: 10px;">
+          <label style="color: var(--secondary-color);">2. Variantes/estilos separados por coma:</label>
+          <input type="text" id="font-styles-input" placeholder="Ej. LOCAL, VISITA, ALTERNATIVA" value="ESTILO 1">
         </div>
 
-        <div class="form-group">
-          <label>Variantes separadas por coma:</label>
-          <input type="text" id="font-styles-input" value="ESTILO 1" placeholder="LOCAL, VISITA, ALTERNATIVA" />
-        </div>
+        <div class="dimensions-container">
+          <div class="form-group">
+            <label>Página:</label>
+            <input type="number" id="extract-page" value="0" min="0" step="1">
+          </div>
 
-        <div class="form-group">
-          <label>Página del PDF:</label>
-          <input type="number" id="page-number" value="0" min="0" />
-        </div>
+          <div class="form-group">
+            <label>Escala:</label>
+            <input type="number" id="extract-scale" value="2.5" min="1" max="4" step="0.5">
+          </div>
 
-        <div class="form-group">
-          <label>Escala de análisis:</label>
-          <input type="number" id="scale-number" value="3" min="1" max="5" step="0.5" />
-        </div>
-
-        <div class="form-group">
-          <label>Cargar PDF:</label>
-          <input type="file" id="pdf-upload" accept="application/pdf" />
-        </div>
-
-        <button class="btn-scan" onclick="procesarDocumentoBackend()">
-          Escanear PDF
-        </button>
-
-        <div class="loader" id="loader">
-          Procesando PDF... ⏳
-        </div>
-
-        <button class="btn-save" onclick="guardarAbecedarioLocal()">
-          Generar JSON de Tipografía
-        </button>
-
-        <button class="btn-clear" onclick="limpiarTodo()">
-          Limpiar resultados
-        </button>
-
-        <div>
-          <label>JSON generado:</label>
-          <pre id="json-output">{}</pre>
-        </div>
-      </section>
-
-      <section class="preview-panel">
-        <h2>Resultados</h2>
-
-        <div class="pdf-gallery-master" id="pdf-gallery-master">
-          <div class="empty-state">
-            Carga un PDF y presiona “Escanear PDF”.
+          <div class="form-group">
+            <label>Área mínima:</label>
+            <input type="number" id="extract-min-area" value="80" min="10" step="10">
           </div>
         </div>
-      </section>
+
+        <div class="form-group" style="margin-top: 15px;">
+          <label>3. Cargar archivo PDF:</label>
+          <input type="file" id="pdf-ai-upload" accept="application/pdf">
+
+          <button id="btn-scan" class="btn-scan" onclick="procesarDocumentoHibrido()">
+            Escanear Documento con Backend Python
+          </button>
+
+          <div id="cv-loader">Procesando PDF en backend Python... ⏳</div>
+        </div>
+
+        <div class="form-group" style="margin-top: 15px;">
+          <label>4. Guardar tipografía en Supabase:</label>
+          <button id="btn-save-abc" class="btn-save-abc" onclick="guardarAbecedarioSupabase()">Guardar en Base de Datos</button>
+          <p style="font-size: 0.8rem; color: #64748b; text-align: left; margin-top: 10px;">
+            Verifique cada carácter. Si una pieza sale mal, elimínela o corrija manualmente la letra/número.
+          </p>
+        </div>
+      </div>
+
+      <div class="preview-panel">
+        <div class="canvas-header">
+          <h2 style="margin: 0;">Resultados del Procesamiento</h2>
+          <p>Extracción visual con backend Python.</p>
+        </div>
+
+        <div class="pdf-gallery-master" id="pdf-gallery-master">
+          <div style="grid-column: 1 / -1; text-align: center; color: #64748b; font-size: 1.1rem; padding: 50px;">
+            Cargue un PDF y presione "Escanear Documento".
+          </div>
+        </div>
+      </div>
     </div>
-  </main>
+  </div>
+
+  <div id="env-produccion" class="env-wrapper">
+    <div class="app-container">
+      <div class="controls-panel">
+        <h2>1. Configuración de Lienzo</h2>
+
+        <div class="dimensions-container">
+          <div class="form-group">
+            <label>Ancho (cm):</label>
+            <input type="number" id="ancho-input" value="57" min="1" step="1" onchange="actualizarLienzo()">
+          </div>
+
+          <div class="form-group">
+            <label>Alto (cm):</label>
+            <input type="number" id="alto-input" value="112" min="1" step="1" onchange="actualizarLienzo()">
+          </div>
+        </div>
+
+        <h2>2. Preparación de Elementos</h2>
+
+        <div class="type-selector">
+          <button class="type-btn active" id="btn-tab-constructor" onclick="cambiarTabProd('constructor')">Tipografía en Nube</button>
+          <button class="type-btn" id="btn-tab-texto" onclick="cambiarTabProd('texto')">Fuente Local</button>
+          <button class="type-btn" id="btn-tab-imagen" onclick="cambiarTabProd('imagen')">Imagen</button>
+        </div>
+
+        <div id="panel-constructor" class="form-group" style="gap: 10px;">
+          <div class="form-group">
+            <label style="color: var(--secondary-color);">Seleccionar fuente de Base de Datos:</label>
+            <select id="db-font-selector" onchange="actualizarSelectorEstilos()">
+              <option value="">Cargando información... ⏳</option>
+            </select>
+            <button class="btn-delete-font" onclick="borrarAbecedarioSupabase()">Eliminar registro seleccionado</button>
+          </div>
+
+          <div class="form-group" id="group-style-selector" style="display: none;">
+            <label style="color: var(--highlight);">Seleccionar Variante / Estilo:</label>
+            <select id="db-style-selector" style="border-color: var(--highlight);"></select>
+          </div>
+
+          <div class="dimensions-container">
+            <div class="form-group" style="flex: 2;">
+              <label>Texto (Nombre):</label>
+              <input type="text" id="nombre-construido" placeholder="Ej. RONALDO">
+            </div>
+
+            <div class="form-group" style="flex: 1;">
+              <label>Alto (cm):</label>
+              <input type="number" id="alto-nombre-input" value="5.5" min="1" step="0.5">
+            </div>
+          </div>
+
+          <div class="dimensions-container">
+            <div class="form-group" style="flex: 2;">
+              <label>Texto (Número):</label>
+              <input type="text" id="numero-construido" placeholder="Ej. 7">
+            </div>
+
+            <div class="form-group" style="flex: 1;">
+              <label>Alto (cm):</label>
+              <input type="number" id="alto-numero-input" value="22" min="1" step="0.5">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Separación:</label>
+            <input type="range" id="letter-spacing" min="0" max="50" value="10">
+          </div>
+
+          <div class="dimensions-container">
+            <div class="form-group">
+              <label>Cantidad:</label>
+              <input type="number" id="cantidad-input-const" value="1" min="1">
+            </div>
+          </div>
+
+          <button class="btn-add" onclick="agregarAColaConstructor()">Añadir a Cola</button>
+        </div>
+
+        <div id="panel-texto" class="form-group hidden-panel" style="gap: 15px;">
+          <div class="form-group">
+            <label>Texto a renderizar:</label>
+            <input type="text" id="texto-input" value="10">
+          </div>
+
+          <div class="form-group">
+            <label style="color: var(--primary-color);">Cargar fuente (.ttf/.otf/.woff):</label>
+            <input type="file" id="font-upload" accept=".ttf,.otf,.woff">
+          </div>
+
+          <div class="form-group">
+            <label>Código de Color:</label>
+            <input type="color" id="color-input" value="#ffffff">
+          </div>
+
+          <div class="dimensions-container">
+            <div class="form-group">
+              <label>Altura (cm):</label>
+              <input type="number" id="alto-numero-input-txt" value="8" min="1" step="0.5">
+            </div>
+
+            <div class="form-group">
+              <label>Cantidad:</label>
+              <input type="number" id="cantidad-input-txt" value="1" min="1">
+            </div>
+          </div>
+
+          <button class="btn-add" onclick="agregarAColaTexto()">Añadir a Cola</button>
+        </div>
+
+        <div id="panel-imagen" class="form-group hidden-panel" style="gap: 15px;">
+          <div class="form-group">
+            <label style="color: var(--primary-color);">Cargar imagen:</label>
+            <input type="file" id="image-upload" accept="image/png,image/jpeg,image/svg+xml">
+          </div>
+
+          <div class="dimensions-container">
+            <div class="form-group">
+              <label>Altura (cm):</label>
+              <input type="number" id="alto-numero-input-img" value="22" min="1" step="0.5">
+            </div>
+
+            <div class="form-group">
+              <label>Cantidad:</label>
+              <input type="number" id="cantidad-input-img" value="1" min="1">
+            </div>
+          </div>
+
+          <button class="btn-add" onclick="agregarAColaImagen()">Añadir a Cola</button>
+        </div>
+
+        <h2 style="margin-top: 15px;">Cola de Producción</h2>
+        <div class="queue-container" id="queue-list">
+          <div style="color: #64748b; font-size: 0.85rem; text-align: center; padding: 10px;">El registro está vacío</div>
+        </div>
+
+        <h2 style="margin-top: 15px;">3. Acomodo y Exportación</h2>
+
+        <div class="advanced-options">
+          <input type="checkbox" id="permitir-rotacion" checked>
+          <label for="permitir-rotacion">Activar rotación dinámica</label>
+        </div>
+
+        <button class="btn-auto" onclick="autoAcomodar()">Generar Acomodo Optimizado</button>
+
+        <div class="button-row">
+          <button class="btn-clear" style="flex: 1;" onclick="vaciarCola()">Limpiar Datos</button>
+          <button class="btn-exportar-png" style="flex: 1;" onclick="descargarPNG()">Exportar PNG</button>
+          <button class="btn-exportar-pdf" style="flex: 1;" onclick="descargarPDF()">Exportar PDF</button>
+        </div>
+
+        <div id="loader">Procesando archivo final... ⏳</div>
+      </div>
+
+      <div class="preview-panel">
+        <div class="canvas-header">
+          <div>
+            <h2 style="margin: 0;">Lienzo de Producción</h2>
+            <button class="btn-clear-canvas" onclick="limpiarLienzo()">Limpiar Lienzo Visual</button>
+          </div>
+
+          <div style="text-align: right;">
+            <p id="medida-info">Área asignada: 57 cm x 112 cm</p>
+            <span id="status-info" class="status-message"></span>
+          </div>
+        </div>
+
+        <div class="canvas-container" id="canvas-wrapper">
+          <svg id="svg-workspace" xmlns="http://www.w3.org/2000/svg">
+            <defs id="svg-defs"></defs>
+            <g id="texto-container"></g>
+          </svg>
+        </div>
+
+        <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 15px; text-align: center;">
+          Los elementos generados se pueden arrastrar manualmente.
+        </p>
+      </div>
+    </div>
+  </div>
 
   <script>
+    function switchEnvironment(env) {
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById(`nav-btn-${env}`).classList.add('active');
+
+      document.querySelectorAll('.env-wrapper').forEach(wrapper => wrapper.classList.remove('active-env'));
+      document.getElementById(`env-${env}`).classList.add('active-env');
+
+      if (env === 'produccion') {
+        actualizarLienzo();
+      }
+    }
+
+    const supabaseUrl = 'https://msqfpkmusmpoismtkxrb.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zcWZwa211c21wb2lzbXRreHJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5Nzg5NDUsImV4cCI6MjA5MjU1NDk0NX0.PrL67uHOTJnjjys5Nb-w0XlclMXt_hNrJ2vXUku-VfE';
+    const supabaseClient = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    let baseDatosGlobal = {};
+    const selectorFuentesDB = document.getElementById('db-font-selector');
+
+    async function inicializarSupabase() {
+      try {
+        if (supabaseUrl.includes('TU_SUPABASE') || supabaseKey.includes('TU_SUPABASE')) {
+          selectorFuentesDB.innerHTML = '<option value="">Configura Supabase en el código</option>';
+          return;
+        }
+
+        let { data, error } = await supabaseClient.from('abecedarios').select('*');
+
+        if (error) throw error;
+
+        baseDatosGlobal = {};
+
+        if (data && data.length > 0) {
+          data.forEach(fila => {
+            baseDatosGlobal[fila.nombre] = fila.data;
+          });
+        }
+
+        actualizarSelectorFuentes();
+      } catch (err) {
+        console.error("Error Supabase:", err.message);
+        selectorFuentesDB.innerHTML = '<option value="">Error de conexión a Supabase</option>';
+      }
+    }
+
+    function actualizarSelectorFuentes() {
+      selectorFuentesDB.innerHTML = '';
+      const nombres = Object.keys(baseDatosGlobal);
+
+      if (nombres.length === 0) {
+        selectorFuentesDB.innerHTML = '<option value="">-- No se encontraron registros --</option>';
+      } else {
+        nombres.forEach(nombre => {
+          selectorFuentesDB.innerHTML += `<option value="${nombre}">${nombre}</option>`;
+        });
+
+        actualizarSelectorEstilos();
+      }
+    }
+
+    function actualizarSelectorEstilos() {
+      const fontName = selectorFuentesDB.value;
+      const containerStyle = document.getElementById('group-style-selector');
+      const selectorEstilo = document.getElementById('db-style-selector');
+
+      selectorEstilo.innerHTML = '';
+
+      if (!fontName || !baseDatosGlobal[fontName]) {
+        containerStyle.style.display = 'none';
+        return;
+      }
+
+      const fontData = baseDatosGlobal[fontName];
+      const keys = Object.keys(fontData);
+
+      if (keys.length === 0) {
+        containerStyle.style.display = 'none';
+        return;
+      }
+
+      let isOldFormat = false;
+
+      if (fontData[keys[0]] && fontData[keys[0]].src) {
+        isOldFormat = true;
+      }
+
+      if (isOldFormat) {
+        containerStyle.style.display = 'none';
+      } else {
+        containerStyle.style.display = 'flex';
+
+        keys.forEach(estilo => {
+          selectorEstilo.innerHTML += `<option value="${estilo}">${estilo}</option>`;
+        });
+      }
+    }
+
+    async function borrarAbecedarioSupabase() {
+      const nombre = selectorFuentesDB.value;
+
+      if (!nombre) return;
+
+      if (confirm(`¿Eliminar permanentemente "${nombre}"?`)) {
+        try {
+          const { error } = await supabaseClient.from('abecedarios').delete().eq('nombre', nombre);
+
+          if (error) throw error;
+
+          delete baseDatosGlobal[nombre];
+          actualizarSelectorFuentes();
+          alert("Registro eliminado con éxito.");
+        } catch (err) {
+          alert("Error al eliminar: " + err.message);
+        }
+      }
+    }
+
     let pdfFileGlobal = null;
     let piezasExtraidasTemp = [];
 
-    document.getElementById("pdf-upload").addEventListener("change", function(e) {
+    document.getElementById('pdf-ai-upload').addEventListener('change', function(e) {
       pdfFileGlobal = e.target.files[0];
     });
 
     function generarOpcionesEstilos() {
-      let rawStyles = document.getElementById("font-styles-input").value;
+      let rawStyles = document.getElementById('font-styles-input').value;
 
       let estilosUsuario = rawStyles
-        .split(",")
+        .split(',')
         .map(s => s.trim().toUpperCase())
-        .filter(s => s !== "");
+        .filter(s => s !== '');
 
       if (estilosUsuario.length === 0) {
         estilosUsuario = ["DEFECTO"];
@@ -401,28 +1046,32 @@
 
       return estilosUsuario
         .map(estilo => `<option value="${estilo}">${estilo}</option>`)
-        .join("");
+        .join('');
     }
 
-    async function procesarDocumentoBackend() {
+    async function procesarDocumentoHibrido() {
       if (!pdfFileGlobal) {
-        alert("Primero carga un archivo PDF.");
+        alert("Por favor, cargue un archivo PDF primero.");
         return;
       }
 
-      const loader = document.getElementById("loader");
-      const gallery = document.getElementById("pdf-gallery-master");
+      const loader = document.getElementById('cv-loader');
+      const btnScan = document.getElementById('btn-scan');
+      const gallery = document.getElementById('pdf-gallery-master');
 
-      loader.style.display = "block";
-      gallery.innerHTML = "";
+      loader.style.display = 'block';
+      btnScan.style.display = 'none';
+      gallery.innerHTML = '';
 
-      const page = document.getElementById("page-number").value || "0";
-      const scale = document.getElementById("scale-number").value || "3";
+      const page = document.getElementById('extract-page').value || '0';
+      const scale = document.getElementById('extract-scale').value || '2.5';
+      const minArea = document.getElementById('extract-min-area').value || '80';
 
       const formData = new FormData();
       formData.append("file", pdfFileGlobal);
       formData.append("page", page);
       formData.append("scale", scale);
+      formData.append("min_area", minArea);
 
       try {
         const response = await fetch("/api/extract", {
@@ -451,16 +1100,16 @@
             h: pieza.h
           });
 
-          gallery.insertAdjacentHTML("beforeend", `
-            <div class="gallery-item" id="card_${pieza.id}" style="border-bottom: 4px solid ${pieza.color};">
+          gallery.insertAdjacentHTML('beforeend', `
+            <div class="gallery-item" id="card_${pieza.id}" style="border-bottom: 4px solid ${pieza.color || '#334155'};">
               <button class="btn-delete-piece" onclick="eliminarPiezaGaleria('${pieza.id}')" title="Descartar imagen">✕</button>
               <img src="${pieza.src}">
               <input
                 type="text"
-                class="char-mapper ${pieza.char ? "ocr-success" : "ocr-doubt"}"
+                class="char-mapper ${pieza.char ? 'ocr-success' : 'ocr-doubt'}"
                 id="map_${pieza.id}"
                 maxlength="1"
-                value="${pieza.char || ""}"
+                value="${pieza.char || ''}"
                 placeholder="?">
               <select class="style-mapper" id="style_${pieza.id}">
                 ${generarOpcionesEstilos()}
@@ -471,7 +1120,7 @@
 
         if (result.pieces.length === 0) {
           gallery.innerHTML = `
-            <div class="empty-state" style="color:#ef4444;">
+            <div style="grid-column: 1 / -1; text-align: center; color: #ef4444; font-size: 1.1rem; padding: 50px;">
               No se encontraron piezas válidas.
             </div>
           `;
@@ -479,12 +1128,13 @@
 
       } catch (error) {
         gallery.innerHTML = `
-          <div class="empty-state" style="color:#ef4444;">
-            Error: ${error.message}
+          <div style="grid-column: 1 / -1; text-align: center; color: #ef4444; font-size: 1.1rem; padding: 50px;">
+            Error procesando PDF: ${error.message}
           </div>
         `;
       } finally {
-        loader.style.display = "none";
+        loader.style.display = 'none';
+        btnScan.style.display = 'block';
       }
     }
 
@@ -498,70 +1148,646 @@
       piezasExtraidasTemp = piezasExtraidasTemp.filter(p => p.id !== idPieza);
     }
 
-    function guardarAbecedarioLocal() {
-      const nombreFuente = document.getElementById("font-custom-name").value.trim();
+    async function guardarAbecedarioSupabase() {
+      let nombreFuente = document.getElementById('font-custom-name').value.trim();
 
       if (!nombreFuente) {
         alert("El nombre de la tipografía es obligatorio.");
         return;
       }
 
-      const abcNuevo = {};
+      let abcNuevo = {};
       let guardadas = 0;
 
       piezasExtraidasTemp.forEach(pieza => {
-        const input = document.getElementById(`map_${pieza.id}`);
-        const select = document.getElementById(`style_${pieza.id}`);
+        const inputChar = document.getElementById(`map_${pieza.id}`);
+        const estiloInput = document.getElementById(`style_${pieza.id}`);
 
-        if (!input || !select) return;
+        if (!inputChar || !estiloInput) return;
 
-        const char = input.value.trim().toUpperCase();
-        const estilo = select.value.trim().toUpperCase() || "DEFECTO";
+        let char = inputChar.value.trim().toUpperCase();
+        let estilo = estiloInput.value.trim().toUpperCase() || "DEFECTO";
 
-        if (!char) return;
-
-        if (!abcNuevo[estilo]) {
-          abcNuevo[estilo] = {};
-        }
-
-        abcNuevo[estilo][char] = {
-          src: pieza.src,
-          propor: pieza.propor,
-          color: pieza.color,
-          meta: {
-            fila: pieza.fila,
-            x: pieza.x,
-            y: pieza.y,
-            w: pieza.w,
-            h: pieza.h
+        if (char) {
+          if (!abcNuevo[estilo]) {
+            abcNuevo[estilo] = {};
           }
-        };
 
-        guardadas++;
+          abcNuevo[estilo][char] = {
+            src: pieza.src,
+            propor: pieza.propor,
+            color: pieza.color || "#000000",
+            meta: {
+              fila: pieza.fila,
+              x: pieza.x,
+              y: pieza.y,
+              w: pieza.w,
+              h: pieza.h
+            }
+          };
+
+          guardadas++;
+        }
       });
 
       if (guardadas === 0) {
-        alert("Debes asignar al menos un carácter válido.");
+        alert("Debe asignar al menos un carácter válido.");
         return;
       }
 
-      const salida = {
-        nombre: nombreFuente,
-        data: abcNuevo
+      const btnSave = document.getElementById('btn-save-abc');
+      btnSave.textContent = "Sincronizando información... ⏳";
+      btnSave.disabled = true;
+
+      try {
+        const { error } = await supabaseClient
+          .from('abecedarios')
+          .upsert({ nombre: nombreFuente, data: abcNuevo }, { onConflict: 'nombre' });
+
+        if (error) throw error;
+
+        baseDatosGlobal[nombreFuente] = abcNuevo;
+        actualizarSelectorFuentes();
+        selectorFuentesDB.value = nombreFuente;
+        actualizarSelectorEstilos();
+
+        document.getElementById('font-custom-name').value = "";
+        document.getElementById('pdf-gallery-master').innerHTML = `
+          <div style="grid-column: 1 / -1; text-align: center; color: #64748b; font-size: 1.1rem; padding: 50px;">
+            Registro completado. Puede cargar un nuevo documento.
+          </div>
+        `;
+
+        switchEnvironment('produccion');
+        cambiarTabProd('constructor');
+
+      } catch (e) {
+        alert("Error con Supabase: " + e.message);
+      } finally {
+        btnSave.textContent = "Guardar en Base de Datos";
+        btnSave.disabled = false;
+      }
+    }
+
+    const anchoInput = document.getElementById('ancho-input');
+    const altoInput = document.getElementById('alto-input');
+    const svgWorkspace = document.getElementById('svg-workspace');
+    const textoContainer = document.getElementById('texto-container');
+    const canvasWrapper = document.getElementById('canvas-wrapper');
+    const queueList = document.getElementById('queue-list');
+    const statusInfo = document.getElementById('status-info');
+    const checkRotacion = document.getElementById('permitir-rotacion');
+
+    let fuenteActual = null;
+    let imagenUnicaBase64 = null;
+    let proporImagenUnica = 1;
+    let nombreImgSuela = "";
+    let colaProduccion = [];
+    const PIXELES_POR_CM = 100;
+
+    opentype.load('https://cdn.jsdelivr.net/npm/@fontsource/anton/files/anton-latin-400-normal.woff', function(err, font) {
+      if (!err) fuenteActual = font;
+    });
+
+    function cambiarTabProd(modo) {
+      document.querySelectorAll('#env-produccion .type-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('#env-produccion [id^="panel-"]').forEach(p => p.classList.add('hidden-panel'));
+
+      document.getElementById(`btn-tab-${modo}`).classList.add('active');
+      document.getElementById(`panel-${modo}`).classList.remove('hidden-panel');
+    }
+
+    function actualizarLienzo() {
+      const ancho = parseFloat(anchoInput.value) || 57;
+      const alto = parseFloat(altoInput.value) || 112;
+
+      document.getElementById('medida-info').textContent = `Área asignada: ${ancho} cm x ${alto} cm`;
+
+      canvasWrapper.style.aspectRatio = `${ancho} / ${alto}`;
+      svgWorkspace.setAttribute('viewBox', `0 0 ${ancho * PIXELES_POR_CM} ${alto * PIXELES_POR_CM}`);
+    }
+
+    function agregarAColaConstructor() {
+      const nombreFuenteSelect = selectorFuentesDB.value;
+
+      if (!nombreFuenteSelect) {
+        alert("Seleccione una fuente de la base de datos.");
+        return;
+      }
+
+      const fontData = baseDatosGlobal[nombreFuenteSelect];
+      const containerStyle = document.getElementById('group-style-selector');
+      let abcAUsar;
+
+      if (containerStyle.style.display !== 'none') {
+        const estiloSeleccionado = document.getElementById('db-style-selector').value;
+        abcAUsar = fontData[estiloSeleccionado];
+      } else {
+        abcAUsar = fontData;
+      }
+
+      if (!abcAUsar) {
+        alert("No se localizó información para la variante seleccionada.");
+        return;
+      }
+
+      const nombre = document.getElementById('nombre-construido').value.toUpperCase();
+      const altoNombreCm = parseFloat(document.getElementById('alto-nombre-input').value) || 5.5;
+
+      const numero = document.getElementById('numero-construido').value.toUpperCase();
+      const altoNumeroCm = parseFloat(document.getElementById('alto-numero-input').value) || 22;
+
+      const cantidad = parseInt(document.getElementById('cantidad-input-const').value) || 1;
+      const espaciadoBase = parseInt(document.getElementById('letter-spacing').value) || 0;
+
+      if (!nombre && !numero) {
+        alert("Debe ingresar nombre o número.");
+        return;
+      }
+
+      let styleLabel = containerStyle.style.display !== 'none'
+        ? ` (${document.getElementById('db-style-selector').value})`
+        : '';
+
+      const procesarElemento = (palabra, altoCm, tipoEtiqueta) => {
+        if (!palabra) return;
+
+        const altoPx = altoCm * PIXELES_POR_CM;
+        const espaciadoPx = espaciadoBase * (altoCm / 10);
+        let currentX = 0;
+        let caracteresArmados = [];
+
+        for (let i = 0; i < palabra.length; i++) {
+          let char = palabra[i];
+
+          if (char === ' ') {
+            currentX += altoPx * 0.3;
+            continue;
+          }
+
+          let dataLetra = abcAUsar[char];
+
+          if (!dataLetra) {
+            console.warn(`No existe carácter: ${char}`);
+            continue;
+          }
+
+          let anchoLetraPx = altoPx * dataLetra.propor;
+
+          caracteresArmados.push({
+            char: char,
+            src: dataLetra.src,
+            x: currentX,
+            w: anchoLetraPx,
+            h: altoPx
+          });
+
+          currentX += anchoLetraPx + espaciadoPx;
+        }
+
+        if (caracteresArmados.length > 0) {
+          colaProduccion.push({
+            tipo: 'palabra_armada',
+            nombreMostrar: `[${nombreFuenteSelect}${styleLabel}] ${tipoEtiqueta}: "${palabra}"`,
+            letras: caracteresArmados,
+            ancho: currentX - espaciadoPx,
+            alto: altoPx,
+            offsetX: 0,
+            offsetY: 0,
+            area: (currentX - espaciadoPx) * altoPx,
+            cantidad: cantidad
+          });
+        }
       };
 
-      document.getElementById("json-output").textContent = JSON.stringify(salida, null, 2);
+      procesarElemento(nombre, altoNombreCm, "Nombre");
+      procesarElemento(numero, altoNumeroCm, "Número");
+
+      actualizarVistaCola();
     }
 
-    function limpiarTodo() {
-      piezasExtraidasTemp = [];
-      document.getElementById("pdf-gallery-master").innerHTML = `
-        <div class="empty-state">
-          Carga un PDF y presiona “Escanear PDF”.
-        </div>
-      `;
-      document.getElementById("json-output").textContent = "{}";
+    document.getElementById('font-upload').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+
+      if (!file) return;
+
+      const reader = new FileReader();
+
+      reader.onload = function(ev) {
+        try {
+          fuenteActual = opentype.parse(ev.target.result);
+          alert("Fuente cargada correctamente.");
+        } catch (e) {
+          alert("No se pudo cargar la fuente.");
+        }
+      };
+
+      reader.readAsArrayBuffer(file);
+    });
+
+    document.getElementById('image-upload').addEventListener('change', function(e) {
+      const file = e.target.files[0];
+
+      if (!file) return;
+
+      nombreImgSuela = file.name;
+
+      const reader = new FileReader();
+
+      reader.onload = function(ev) {
+        imagenUnicaBase64 = ev.target.result;
+
+        const img = new Image();
+
+        img.onload = function() {
+          proporImagenUnica = img.width / img.height;
+        };
+
+        img.src = imagenUnicaBase64;
+      };
+
+      reader.readAsDataURL(file);
+    });
+
+    function agregarAColaTexto() {
+      const texto = document.getElementById('texto-input').value;
+      const color = document.getElementById('color-input').value;
+      const altoCm = parseFloat(document.getElementById('alto-numero-input-txt').value) || 8;
+      const cantidad = parseInt(document.getElementById('cantidad-input-txt').value) || 1;
+
+      if (!texto || !fuenteActual) {
+        alert("Debe ingresar texto y cargar una fuente.");
+        return;
+      }
+
+      const altoPx = altoCm * PIXELES_POR_CM;
+      let pathPrueba = fuenteActual.getPath(texto, 0, 0, 1000);
+      let cajaPrueba = pathPrueba.getBoundingBox();
+
+      const escala = altoPx / (cajaPrueba.y2 - cajaPrueba.y1);
+      let pathFinal = fuenteActual.getPath(texto, 0, 0, 1000 * escala);
+      let cajaFinal = pathFinal.getBoundingBox();
+
+      colaProduccion.push({
+        tipo: 'vector',
+        nombreMostrar: `"${texto}"`,
+        pathData: pathFinal.toPathData(2),
+        color: color,
+        ancho: cajaFinal.x2 - cajaFinal.x1,
+        alto: altoPx,
+        offsetX: -cajaFinal.x1,
+        offsetY: -cajaFinal.y1,
+        area: (cajaFinal.x2 - cajaFinal.x1) * altoPx,
+        cantidad: cantidad
+      });
+
+      actualizarVistaCola();
     }
+
+    function agregarAColaImagen() {
+      if (!imagenUnicaBase64) {
+        alert("Cargue una imagen primero.");
+        return;
+      }
+
+      const altoCm = parseFloat(document.getElementById('alto-numero-input-img').value) || 22;
+      const cantidad = parseInt(document.getElementById('cantidad-input-img').value) || 1;
+      const altoPx = altoCm * PIXELES_POR_CM;
+      const anchoPx = altoPx * proporImagenUnica;
+
+      colaProduccion.push({
+        tipo: 'imagen',
+        nombreMostrar: `[IMG] ${nombreImgSuela.substring(0, 12)}`,
+        src: imagenUnicaBase64,
+        ancho: anchoPx,
+        alto: altoPx,
+        offsetX: 0,
+        offsetY: 0,
+        area: anchoPx * altoPx,
+        cantidad: cantidad
+      });
+
+      actualizarVistaCola();
+    }
+
+    function actualizarVistaCola() {
+      if (colaProduccion.length === 0) {
+        queueList.innerHTML = '<div style="color: #64748b; font-size: 0.85rem; text-align: center; padding: 10px;">El registro está vacío</div>';
+        return;
+      }
+
+      queueList.innerHTML = '';
+
+      colaProduccion.forEach((item, index) => {
+        queueList.insertAdjacentHTML('beforeend', `
+          <div class="queue-item">
+            <span>
+              <b>${item.cantidad}x</b> ${item.nombreMostrar}
+              (${(item.ancho / PIXELES_POR_CM).toFixed(1)}x${(item.alto / PIXELES_POR_CM).toFixed(1)}cm)
+            </span>
+            <button style="background:none; border:none; color:#ef4444; cursor:pointer; padding:5px;" onclick="eliminarDeCola(${index})">✕</button>
+          </div>
+        `);
+      });
+    }
+
+    function eliminarDeCola(index) {
+      colaProduccion.splice(index, 1);
+      actualizarVistaCola();
+    }
+
+    function vaciarCola() {
+      colaProduccion = [];
+      actualizarVistaCola();
+    }
+
+    function limpiarLienzo() {
+      textoContainer.innerHTML = '';
+      statusInfo.textContent = '';
+    }
+
+    class GuillotinePacker {
+      constructor(width, height) {
+        this.freeRects = [{ x: 0, y: 0, w: width, h: height }];
+      }
+
+      pack(w, h, rotatable) {
+        let bestNode = null;
+        let bestIndex = -1;
+        let rotated = false;
+        let minArea = Infinity;
+
+        for (let i = 0; i < this.freeRects.length; i++) {
+          let rect = this.freeRects[i];
+
+          if (w <= rect.w && h <= rect.h && rect.w * rect.h < minArea) {
+            bestNode = { x: rect.x, y: rect.y, w: w, h: h };
+            bestIndex = i;
+            rotated = false;
+            minArea = rect.w * rect.h;
+          }
+
+          if (rotatable && h <= rect.w && w <= rect.h && rect.w * rect.h < minArea) {
+            bestNode = { x: rect.x, y: rect.y, w: h, h: w };
+            bestIndex = i;
+            rotated = true;
+            minArea = rect.w * rect.h;
+          }
+        }
+
+        if (bestIndex !== -1) {
+          this.split(bestIndex, bestNode);
+          return { x: bestNode.x, y: bestNode.y, rotated: rotated };
+        }
+
+        return null;
+      }
+
+      split(index, placedRect) {
+        let rect = this.freeRects[index];
+        this.freeRects.splice(index, 1);
+
+        let rightW = rect.w - placedRect.w;
+        let bottomH = rect.h - placedRect.h;
+
+        if (rightW > 0 || bottomH > 0) {
+          if (rightW > bottomH) {
+            if (rightW > 0) this.freeRects.push({ x: rect.x + placedRect.w, y: rect.y, w: rightW, h: placedRect.h });
+            if (bottomH > 0) this.freeRects.push({ x: rect.x, y: rect.y + placedRect.h, w: rect.w, h: bottomH });
+          } else {
+            if (rightW > 0) this.freeRects.push({ x: rect.x + placedRect.w, y: rect.y, w: rightW, h: rect.h });
+            if (bottomH > 0) this.freeRects.push({ x: rect.x, y: rect.y + placedRect.h, w: placedRect.w, h: bottomH });
+          }
+        }
+      }
+    }
+
+    function autoAcomodar() {
+      if (colaProduccion.length === 0) return;
+
+      limpiarLienzo();
+
+      const packer = new GuillotinePacker(
+        (parseFloat(anchoInput.value) || 57) * PIXELES_POR_CM,
+        (parseFloat(altoInput.value) || 112) * PIXELES_POR_CM
+      );
+
+      const permitirRotacion = checkRotacion.checked;
+
+      let piezas = [];
+
+      colaProduccion.forEach(item => {
+        for (let i = 0; i < item.cantidad; i++) {
+          piezas.push({ ...item });
+        }
+      });
+
+      piezas.sort((a, b) => b.area - a.area || b.alto - a.alto);
+
+      let totalAcomodados = 0;
+      let elementosNoCupieron = 0;
+
+      piezas.forEach(pieza => {
+        let result = packer.pack(pieza.ancho + 15, pieza.alto + 15, permitirRotacion);
+
+        if (result) {
+          dibujarPiezaExacta(pieza, result.x, result.y, result.rotated);
+          totalAcomodados++;
+        } else {
+          elementosNoCupieron++;
+        }
+      });
+
+      if (elementosNoCupieron > 0) {
+        alert(`Espacio insuficiente. Faltaron ${elementosNoCupieron} elementos.`);
+      } else {
+        statusInfo.textContent = `Acomodo optimizado: ${totalAcomodados} elementos procesados.`;
+        statusInfo.style.color = 'var(--secondary-color)';
+      }
+    }
+
+    function dibujarPiezaExacta(pieza, x, y, rotado) {
+      const gMaster = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      gMaster.setAttribute('class', 'draggable-piece');
+      gMaster.setAttribute('transform', `translate(${x}, ${y})`);
+      gMaster.setAttribute('data-x', x);
+      gMaster.setAttribute('data-y', y);
+      gMaster.setAttribute('data-rotated', rotado);
+
+      const gRotacion = document.createElementNS("http://www.w3.org/2000/svg", "g");
+
+      if (rotado) {
+        gRotacion.setAttribute('transform', `translate(0, ${pieza.ancho}) rotate(-90)`);
+      }
+
+      if (pieza.tipo === 'vector') {
+        const pathNode = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        pathNode.setAttribute('d', pieza.pathData);
+        pathNode.setAttribute('fill', pieza.color);
+        pathNode.setAttribute('transform', `translate(${pieza.offsetX}, ${pieza.offsetY})`);
+        gRotacion.appendChild(pathNode);
+      } else if (pieza.tipo === 'imagen') {
+        const imgNode = document.createElementNS("http://www.w3.org/2000/svg", "image");
+        imgNode.setAttribute('href', pieza.src);
+        imgNode.setAttribute('width', pieza.ancho);
+        imgNode.setAttribute('height', pieza.alto);
+        imgNode.setAttribute('preserveAspectRatio', 'none');
+        gRotacion.appendChild(imgNode);
+      } else if (pieza.tipo === 'palabra_armada') {
+        pieza.letras.forEach(letra => {
+          const imgNode = document.createElementNS("http://www.w3.org/2000/svg", "image");
+          imgNode.setAttribute('href', letra.src);
+          imgNode.setAttribute('width', letra.w);
+          imgNode.setAttribute('height', letra.h);
+          imgNode.setAttribute('x', letra.x);
+          imgNode.setAttribute('y', 0);
+          imgNode.setAttribute('preserveAspectRatio', 'none');
+          gRotacion.appendChild(imgNode);
+        });
+      }
+
+      gMaster.appendChild(gRotacion);
+      textoContainer.appendChild(gMaster);
+
+      gMaster.addEventListener('dblclick', function() {
+        textoContainer.removeChild(gMaster);
+      });
+    }
+
+    let elementoSeleccionado = null;
+    let offset = { x: 0, y: 0 };
+
+    function obtenerPosicionEvent(evt) {
+      let cx = evt.touches ? evt.touches[0].clientX : evt.clientX;
+      let cy = evt.touches ? evt.touches[0].clientY : evt.clientY;
+      let CTM = svgWorkspace.getScreenCTM();
+
+      return {
+        x: (cx - CTM.e) / CTM.a,
+        y: (cy - CTM.f) / CTM.d
+      };
+    }
+
+    function iniciarArrastre(e) {
+      let target = e.target;
+
+      while (target && !target.classList?.contains('draggable-piece') && target.tagName !== 'svg') {
+        target = target.parentNode;
+      }
+
+      if (target && target.classList?.contains('draggable-piece')) {
+        elementoSeleccionado = target;
+        let pos = obtenerPosicionEvent(e);
+        offset.x = pos.x - parseFloat(target.getAttribute('data-x'));
+        offset.y = pos.y - parseFloat(target.getAttribute('data-y'));
+        e.preventDefault();
+      }
+    }
+
+    function moverArrastre(e) {
+      if (elementoSeleccionado) {
+        e.preventDefault();
+
+        let pos = obtenerPosicionEvent(e);
+        let newX = pos.x - offset.x;
+        let newY = pos.y - offset.y;
+
+        elementoSeleccionado.setAttribute('transform', `translate(${newX}, ${newY})`);
+        elementoSeleccionado.setAttribute('data-x', newX);
+        elementoSeleccionado.setAttribute('data-y', newY);
+      }
+    }
+
+    function finalizarArrastre() {
+      elementoSeleccionado = null;
+    }
+
+    svgWorkspace.addEventListener('mousedown', iniciarArrastre);
+    svgWorkspace.addEventListener('mousemove', moverArrastre);
+    svgWorkspace.addEventListener('mouseup', finalizarArrastre);
+    svgWorkspace.addEventListener('mouseleave', finalizarArrastre);
+
+    svgWorkspace.addEventListener('touchstart', iniciarArrastre, { passive: false });
+    svgWorkspace.addEventListener('touchmove', moverArrastre, { passive: false });
+    svgWorkspace.addEventListener('touchend', finalizarArrastre);
+
+    function descargarPNG() {
+      document.getElementById('loader').style.display = 'block';
+
+      setTimeout(() => {
+        const anchoCm = parseFloat(anchoInput.value) || 57;
+        const altoCm = parseFloat(altoInput.value) || 112;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(anchoCm * 59.055);
+        canvas.height = Math.round(altoCm * 59.055);
+
+        const ctx = canvas.getContext("2d");
+
+        const svgBase64 = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(svgWorkspace));
+
+        const img = new Image();
+
+        img.onload = function() {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const link = document.createElement("a");
+          link.download = `GangSheet_Produccion.png`;
+          link.href = canvas.toDataURL("image/png");
+          link.click();
+
+          document.getElementById('loader').style.display = 'none';
+        };
+
+        img.src = svgBase64;
+      }, 50);
+    }
+
+    function descargarPDF() {
+      document.getElementById('loader').style.display = 'block';
+
+      setTimeout(() => {
+        const anchoCm = parseFloat(anchoInput.value) || 57;
+        const altoCm = parseFloat(altoInput.value) || 112;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(anchoCm * 59.055);
+        canvas.height = Math.round(altoCm * 59.055);
+
+        const ctx = canvas.getContext("2d");
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        const svgBase64 = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(svgWorkspace));
+        const img = new Image();
+
+        img.onload = function() {
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          const imgData = canvas.toDataURL("image/jpeg", 1.0);
+          const { jsPDF } = window.jspdf;
+
+          const pdf = new jsPDF({
+            orientation: anchoCm > altoCm ? 'landscape' : 'portrait',
+            unit: 'cm',
+            format: [anchoCm, altoCm]
+          });
+
+          pdf.addImage(imgData, 'JPEG', 0, 0, anchoCm, altoCm);
+          pdf.save(`GangSheet_Produccion.pdf`);
+
+          document.getElementById('loader').style.display = 'none';
+        };
+
+        img.src = svgBase64;
+      }, 50);
+    }
+
+    window.onload = function() {
+      actualizarLienzo();
+      inicializarSupabase();
+    };
   </script>
 </body>
 </html>
